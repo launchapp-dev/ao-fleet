@@ -223,6 +223,7 @@ mod tests {
             root_path: "/tmp/app".to_string(),
             ao_project_root: "/tmp/app".to_string(),
             default_branch: "main".to_string(),
+            remote_url: Some("https://github.com/example/app.git".to_string()),
             enabled: true,
             created_at: Utc::now(),
             updated_at: Utc::now(),

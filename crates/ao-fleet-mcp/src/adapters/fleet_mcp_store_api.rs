@@ -84,6 +84,7 @@ impl FleetMcpApi for FleetMcpStoreApi {
                 root_path: input.root_path,
                 ao_project_root: input.ao_project_root,
                 default_branch: input.default_branch,
+                remote_url: input.remote_url,
                 enabled: input.enabled,
             })
             .map_err(Into::into)

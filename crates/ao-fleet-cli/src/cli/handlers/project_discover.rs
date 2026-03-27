@@ -130,6 +130,7 @@ fn register_discovered_project(
             root_path: candidate.root_path.clone(),
             ao_project_root: candidate.ao_project_root.clone(),
             default_branch: candidate.default_branch.clone(),
+            remote_url: candidate.remote_url.clone(),
             enabled: candidate.has_ao,
         })
         .map_err(Into::into)
@@ -279,7 +280,7 @@ fn parse_remote_url(config: &str) -> Option<String> {
             continue;
         }
 
-        let url = trimmed.strip_prefix("url = ")?.trim().to_string();
+        let url = sanitize_remote_url(trimmed.strip_prefix("url = ")?.trim());
         if current_remote.as_deref() == Some("origin") {
             return Some(url);
         }
@@ -295,6 +296,16 @@ fn parse_remote_url(config: &str) -> Option<String> {
 fn parse_remote_section_name(line: &str) -> Option<String> {
     let name = line.strip_prefix("[remote \"")?.strip_suffix("\"]")?;
     Some(name.to_string())
+}
+
+fn sanitize_remote_url(url: &str) -> String {
+    if let Some((scheme, rest)) = url.split_once("://") {
+        if let Some((_, host_and_path)) = rest.rsplit_once('@') {
+            return format!("{scheme}://{host_and_path}");
+        }
+    }
+
+    url.to_string()
 }
 
 fn read_subdirectories(path: &Path) -> Result<Vec<PathBuf>> {
@@ -501,5 +512,13 @@ mod tests {
         let remote_url = parse_remote_url(config);
 
         assert_eq!(remote_url.as_deref(), Some("https://github.com/example/upstream.git"));
+    }
+
+    #[test]
+    fn sanitize_remote_url_removes_embedded_credentials() {
+        let sanitized =
+            sanitize_remote_url("https://x-access-token:secret@github.com/example/repo.git");
+
+        assert_eq!(sanitized, "https://github.com/example/repo.git");
     }
 }

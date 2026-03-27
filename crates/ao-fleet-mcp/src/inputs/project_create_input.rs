@@ -7,5 +7,6 @@ pub struct ProjectCreateInput {
     pub root_path: String,
     pub ao_project_root: String,
     pub default_branch: String,
+    pub remote_url: Option<String>,
     pub enabled: bool,
 }

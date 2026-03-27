@@ -17,6 +17,9 @@ pub struct ProjectCreateCommand {
     #[arg(long, default_value = "main")]
     pub default_branch: String,
 
+    #[arg(long)]
+    pub remote_url: Option<String>,
+
     #[arg(long, default_value_t = true)]
     pub enabled: bool,
 }

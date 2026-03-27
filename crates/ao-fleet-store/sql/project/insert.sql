@@ -5,7 +5,8 @@ INSERT INTO projects (
   root_path,
   ao_project_root,
   default_branch,
+  remote_url,
   enabled,
   created_at,
   updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

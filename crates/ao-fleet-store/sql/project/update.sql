@@ -4,6 +4,7 @@ SET team_id = ?,
     root_path = ?,
     ao_project_root = ?,
     default_branch = ?,
+    remote_url = ?,
     enabled = ?,
     updated_at = ?
 WHERE id = ?

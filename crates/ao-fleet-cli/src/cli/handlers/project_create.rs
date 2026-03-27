@@ -14,6 +14,7 @@ pub fn project_create(db_path: &str, command: ProjectCreateCommand) -> Result<()
         root_path: command.root_path,
         ao_project_root: command.ao_project_root,
         default_branch: command.default_branch,
+        remote_url: command.remote_url,
         enabled: command.enabled,
     })?;
     print_json(&project)

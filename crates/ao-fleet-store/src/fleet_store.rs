@@ -35,6 +35,7 @@ const MIGRATION_SQL: &[&str] = &[
     include_str!("../sql/migrations/004_create_knowledge_tables.sql"),
     include_str!("../sql/migrations/005_create_observed_daemon_statuses.sql"),
     include_str!("../sql/migrations/006_create_hosts_and_placements.sql"),
+    include_str!("../sql/migrations/007_add_project_remote_url.sql"),
 ];
 
 #[derive(Debug, Clone)]
@@ -775,6 +776,7 @@ impl FleetStore {
             root_path: input.root_path,
             ao_project_root: input.ao_project_root,
             default_branch: input.default_branch,
+            remote_url: input.remote_url,
             enabled: input.enabled,
             created_at: now,
             updated_at: now,
@@ -791,6 +793,7 @@ impl FleetStore {
                 project.root_path,
                 project.ao_project_root,
                 project.default_branch,
+                project.remote_url,
                 i64::from(project.enabled),
                 project.created_at.to_rfc3339(),
                 project.updated_at.to_rfc3339(),
@@ -814,6 +817,7 @@ impl FleetStore {
                             "root_path": project.root_path,
                             "ao_project_root": project.ao_project_root,
                             "default_branch": project.default_branch,
+                            "remote_url": project.remote_url,
                             "enabled": project.enabled,
                         }),
                     },
@@ -861,6 +865,7 @@ impl FleetStore {
                 project.root_path,
                 project.ao_project_root,
                 project.default_branch,
+                project.remote_url,
                 i64::from(project.enabled),
                 project.updated_at.to_rfc3339(),
                 project.id,
@@ -886,6 +891,7 @@ impl FleetStore {
                     "root_path": project.root_path,
                     "ao_project_root": project.ao_project_root,
                     "default_branch": project.default_branch,
+                    "remote_url": project.remote_url,
                     "enabled": project.enabled,
                 }),
             },
@@ -1177,8 +1183,13 @@ impl FleetStore {
 
     fn run_migrations(&self) -> Result<(), StoreError> {
         let conn = self.connection()?;
-        for migration in MIGRATION_SQL {
-            conn.execute_batch(migration)?;
+        for (index, migration) in MIGRATION_SQL.iter().enumerate() {
+            if let Err(error) = conn.execute_batch(migration) {
+                if should_ignore_migration_error(index, &error) {
+                    continue;
+                }
+                return Err(error.into());
+            }
         }
         Ok(())
     }
@@ -1193,6 +1204,17 @@ fn is_unique_constraint(error: &rusqlite::Error) -> bool {
         error,
         rusqlite::Error::SqliteFailure(code, _) if matches!(code.code, rusqlite::ErrorCode::ConstraintViolation)
     )
+}
+
+fn should_ignore_migration_error(index: usize, error: &rusqlite::Error) -> bool {
+    const REMOTE_URL_MIGRATION_INDEX: usize = 6;
+
+    index == REMOTE_URL_MIGRATION_INDEX
+        && matches!(
+            error,
+            rusqlite::Error::SqliteFailure(_, Some(message))
+                if message.contains("duplicate column name: remote_url")
+        )
 }
 
 fn collect_rows<T, I>(rows: I) -> Result<Vec<T>, StoreError>
@@ -1625,9 +1647,10 @@ fn project_from_row(row: &Row<'_>) -> Result<Project, rusqlite::Error> {
         root_path: row.get(3)?,
         ao_project_root: row.get(4)?,
         default_branch: row.get(5)?,
-        enabled: bool_from_i64(row.get(6)?),
-        created_at: parse_datetime_sql(7, row.get::<_, String>(7)?)?,
-        updated_at: parse_datetime_sql(8, row.get::<_, String>(8)?)?,
+        remote_url: row.get(6)?,
+        enabled: bool_from_i64(row.get(7)?),
+        created_at: parse_datetime_sql(8, row.get::<_, String>(8)?)?,
+        updated_at: parse_datetime_sql(9, row.get::<_, String>(9)?)?,
     })
 }
 
@@ -1805,6 +1828,7 @@ mod tests {
                 root_path: "/tmp/launch-site".to_string(),
                 ao_project_root: "/tmp/launch-site".to_string(),
                 default_branch: "main".to_string(),
+                remote_url: None,
                 enabled: true,
             })
             .expect("project created");
@@ -1934,6 +1958,7 @@ mod tests {
                 root_path: "/tmp/launch-site".to_string(),
                 ao_project_root: "/tmp/launch-site".to_string(),
                 default_branch: "main".to_string(),
+                remote_url: None,
                 enabled: true,
             })
             .expect("first project created");
@@ -1945,6 +1970,7 @@ mod tests {
                 root_path: "/tmp/campaigns".to_string(),
                 ao_project_root: "/tmp/campaigns".to_string(),
                 default_branch: "main".to_string(),
+                remote_url: None,
                 enabled: false,
             })
             .expect("second project created");

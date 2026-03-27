@@ -21,5 +21,8 @@ pub struct ProjectUpdateCommand {
     pub default_branch: Option<String>,
 
     #[arg(long)]
+    pub remote_url: Option<String>,
+
+    #[arg(long)]
     pub enabled: Option<bool>,
 }

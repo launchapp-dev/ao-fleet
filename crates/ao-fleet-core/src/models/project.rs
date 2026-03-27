@@ -9,6 +9,7 @@ pub struct Project {
     pub root_path: String,
     pub ao_project_root: String,
     pub default_branch: String,
+    pub remote_url: Option<String>,
     pub enabled: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

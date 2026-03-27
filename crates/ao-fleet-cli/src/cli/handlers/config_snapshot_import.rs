@@ -98,6 +98,7 @@ fn import_projects(
                 root_path: snapshot_project.root_path.clone(),
                 ao_project_root: snapshot_project.ao_project_root.clone(),
                 default_branch: snapshot_project.default_branch.clone(),
+                remote_url: snapshot_project.remote_url.clone(),
                 enabled: snapshot_project.enabled,
                 created_at: existing.created_at,
                 updated_at: now,
@@ -108,6 +109,7 @@ fn import_projects(
                 root_path: snapshot_project.root_path.clone(),
                 ao_project_root: snapshot_project.ao_project_root.clone(),
                 default_branch: snapshot_project.default_branch.clone(),
+                remote_url: snapshot_project.remote_url.clone(),
                 enabled: snapshot_project.enabled,
             })?,
         };

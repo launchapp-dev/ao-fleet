@@ -26,6 +26,9 @@ pub fn project_update(db_path: &str, command: ProjectUpdateCommand) -> Result<()
     if let Some(value) = command.default_branch {
         project.default_branch = value;
     }
+    if let Some(value) = command.remote_url {
+        project.remote_url = Some(value);
+    }
     if let Some(value) = command.enabled {
         project.enabled = value;
     }
