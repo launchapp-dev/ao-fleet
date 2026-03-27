@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use ao_fleet_core::{
-    DaemonDesiredState, NewProject, NewSchedule, NewTeam, Project, Schedule, SchedulePolicyKind,
-    Team, WeekdayWindow,
+    AuditEvent, DaemonDesiredState, NewAuditEvent, NewProject, NewSchedule, NewTeam, Project,
+    Schedule, SchedulePolicyKind, Team, WeekdayWindow,
 };
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Row, params, types::Type};
@@ -15,6 +15,7 @@ use crate::errors::store_error::StoreError;
 const MIGRATION_SQL: &[&str] = &[
     include_str!("../sql/migrations/001_enable_foreign_keys.sql"),
     include_str!("../sql/migrations/002_create_schema.sql"),
+    include_str!("../sql/migrations/003_create_audit_events.sql"),
 ];
 
 #[derive(Debug, Clone)]
@@ -51,6 +52,27 @@ impl FleetStore {
         if enabled { DaemonDesiredState::Running } else { DaemonDesiredState::Stopped }
     }
 
+    pub fn append_audit_event(&self, input: NewAuditEvent) -> Result<AuditEvent, StoreError> {
+        input.validate()?;
+        let mut conn = self.connection()?;
+        let tx = conn.transaction()?;
+        let audit_event = append_audit_event_with_connection(&tx, input)?;
+        tx.commit()?;
+        Ok(audit_event)
+    }
+
+    pub fn list_audit_events(
+        &self,
+        team_id: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<Vec<AuditEvent>, StoreError> {
+        let conn = self.connection()?;
+        let limit = limit.unwrap_or(100);
+        let mut stmt = conn.prepare(include_str!("../sql/audit_event/list.sql"))?;
+        let rows = stmt.query_map(params![team_id, limit as i64], audit_event_from_row)?;
+        collect_rows(rows)
+    }
+
     pub fn create_team(&self, input: NewTeam) -> Result<Team, StoreError> {
         input.validate()?;
         let now = Utc::now();
@@ -65,8 +87,9 @@ impl FleetStore {
             updated_at: now,
         };
 
-        let conn = self.connection()?;
-        let result = conn.execute(
+        let mut conn = self.connection()?;
+        let tx = conn.transaction()?;
+        let result = tx.execute(
             include_str!("../sql/team/insert.sql"),
             params![
                 team.id,
@@ -81,7 +104,28 @@ impl FleetStore {
         );
 
         match result {
-            Ok(_) => Ok(team),
+            Ok(_) => {
+                record_audit_event(
+                    &tx,
+                    NewAuditEvent {
+                        team_id: Some(team.id.clone()),
+                        entity_type: "team".to_string(),
+                        entity_id: team.id.clone(),
+                        action: "created".to_string(),
+                        actor_type: "system".to_string(),
+                        actor_id: None,
+                        summary: format!("Created team {}", team.slug),
+                        details: serde_json::json!({
+                            "slug": team.slug,
+                            "name": team.name,
+                            "ownership": team.ownership,
+                            "business_priority": team.business_priority,
+                        }),
+                    },
+                )?;
+                tx.commit()?;
+                Ok(team)
+            }
             Err(error) if is_unique_constraint(&error) => {
                 Err(StoreError::already_exists("team", team.slug))
             }
@@ -105,8 +149,9 @@ impl FleetStore {
 
     pub fn update_team(&self, team: Team) -> Result<Team, StoreError> {
         validate_team(&team)?;
-        let conn = self.connection()?;
-        let changed = conn.execute(
+        let mut conn = self.connection()?;
+        let tx = conn.transaction()?;
+        let changed = tx.execute(
             include_str!("../sql/team/update.sql"),
             params![
                 team.slug,
@@ -123,12 +168,49 @@ impl FleetStore {
             return Err(StoreError::not_found("team", team.id));
         }
 
+        record_audit_event(
+            &tx,
+            NewAuditEvent {
+                team_id: Some(team.id.clone()),
+                entity_type: "team".to_string(),
+                entity_id: team.id.clone(),
+                action: "updated".to_string(),
+                actor_type: "system".to_string(),
+                actor_id: None,
+                summary: format!("Updated team {}", team.slug),
+                details: serde_json::json!({
+                    "slug": team.slug,
+                    "name": team.name,
+                    "ownership": team.ownership,
+                    "business_priority": team.business_priority,
+                }),
+            },
+        )?;
+        tx.commit()?;
+
         Ok(team)
     }
 
     pub fn delete_team(&self, id: &str) -> Result<bool, StoreError> {
-        let conn = self.connection()?;
-        let changed = conn.execute(include_str!("../sql/team/delete.sql"), params![id])?;
+        let mut conn = self.connection()?;
+        let tx = conn.transaction()?;
+        let changed = tx.execute(include_str!("../sql/team/delete.sql"), params![id])?;
+        if changed > 0 {
+            record_audit_event(
+                &tx,
+                NewAuditEvent {
+                    team_id: Some(id.to_string()),
+                    entity_type: "team".to_string(),
+                    entity_id: id.to_string(),
+                    action: "deleted".to_string(),
+                    actor_type: "system".to_string(),
+                    actor_id: None,
+                    summary: format!("Deleted team {id}"),
+                    details: serde_json::json!({}),
+                },
+            )?;
+            tx.commit()?;
+        }
         Ok(changed > 0)
     }
 
@@ -147,8 +229,9 @@ impl FleetStore {
             updated_at: now,
         };
 
-        let conn = self.connection()?;
-        let result = conn.execute(
+        let mut conn = self.connection()?;
+        let tx = conn.transaction()?;
+        let result = tx.execute(
             include_str!("../sql/project/insert.sql"),
             params![
                 project.id,
@@ -164,7 +247,29 @@ impl FleetStore {
         );
 
         match result {
-            Ok(_) => Ok(project),
+            Ok(_) => {
+                record_audit_event(
+                    &tx,
+                    NewAuditEvent {
+                        team_id: Some(project.team_id.clone()),
+                        entity_type: "project".to_string(),
+                        entity_id: project.id.clone(),
+                        action: "created".to_string(),
+                        actor_type: "system".to_string(),
+                        actor_id: None,
+                        summary: format!("Created project {}", project.slug),
+                        details: serde_json::json!({
+                            "slug": project.slug,
+                            "root_path": project.root_path,
+                            "ao_project_root": project.ao_project_root,
+                            "default_branch": project.default_branch,
+                            "enabled": project.enabled,
+                        }),
+                    },
+                )?;
+                tx.commit()?;
+                Ok(project)
+            }
             Err(error) if is_unique_constraint(&error) => {
                 Err(StoreError::already_exists("project", project.slug))
             }
@@ -195,8 +300,9 @@ impl FleetStore {
 
     pub fn update_project(&self, project: Project) -> Result<Project, StoreError> {
         validate_project(&project)?;
-        let conn = self.connection()?;
-        let changed = conn.execute(
+        let mut conn = self.connection()?;
+        let tx = conn.transaction()?;
+        let changed = tx.execute(
             include_str!("../sql/project/update.sql"),
             params![
                 project.team_id,
@@ -214,12 +320,50 @@ impl FleetStore {
             return Err(StoreError::not_found("project", project.id));
         }
 
+        record_audit_event(
+            &tx,
+            NewAuditEvent {
+                team_id: Some(project.team_id.clone()),
+                entity_type: "project".to_string(),
+                entity_id: project.id.clone(),
+                action: "updated".to_string(),
+                actor_type: "system".to_string(),
+                actor_id: None,
+                summary: format!("Updated project {}", project.slug),
+                details: serde_json::json!({
+                    "slug": project.slug,
+                    "root_path": project.root_path,
+                    "ao_project_root": project.ao_project_root,
+                    "default_branch": project.default_branch,
+                    "enabled": project.enabled,
+                }),
+            },
+        )?;
+        tx.commit()?;
+
         Ok(project)
     }
 
     pub fn delete_project(&self, id: &str) -> Result<bool, StoreError> {
-        let conn = self.connection()?;
-        let changed = conn.execute(include_str!("../sql/project/delete.sql"), params![id])?;
+        let mut conn = self.connection()?;
+        let tx = conn.transaction()?;
+        let changed = tx.execute(include_str!("../sql/project/delete.sql"), params![id])?;
+        if changed > 0 {
+            record_audit_event(
+                &tx,
+                NewAuditEvent {
+                    team_id: None,
+                    entity_type: "project".to_string(),
+                    entity_id: id.to_string(),
+                    action: "deleted".to_string(),
+                    actor_type: "system".to_string(),
+                    actor_id: None,
+                    summary: format!("Deleted project {id}"),
+                    details: serde_json::json!({}),
+                },
+            )?;
+            tx.commit()?;
+        }
         Ok(changed > 0)
     }
 
@@ -237,9 +381,10 @@ impl FleetStore {
             updated_at: now,
         };
 
-        let conn = self.connection()?;
+        let mut conn = self.connection()?;
+        let tx = conn.transaction()?;
         let windows_json = serde_json::to_string(&schedule.windows)?;
-        let result = conn.execute(
+        let result = tx.execute(
             include_str!("../sql/schedule/insert.sql"),
             params![
                 schedule.id,
@@ -254,7 +399,28 @@ impl FleetStore {
         );
 
         match result {
-            Ok(_) => Ok(schedule),
+            Ok(_) => {
+                record_audit_event(
+                    &tx,
+                    NewAuditEvent {
+                        team_id: Some(schedule.team_id.clone()),
+                        entity_type: "schedule".to_string(),
+                        entity_id: schedule.id.clone(),
+                        action: "created".to_string(),
+                        actor_type: "system".to_string(),
+                        actor_id: None,
+                        summary: format!("Created schedule {}", schedule.id),
+                        details: serde_json::json!({
+                            "policy_kind": policy_kind_to_text(schedule.policy_kind),
+                            "timezone": schedule.timezone,
+                            "enabled": schedule.enabled,
+                            "window_count": schedule.windows.len(),
+                        }),
+                    },
+                )?;
+                tx.commit()?;
+                Ok(schedule)
+            }
             Err(error) if is_unique_constraint(&error) => {
                 Err(StoreError::already_exists("schedule", schedule.id))
             }
@@ -285,9 +451,10 @@ impl FleetStore {
 
     pub fn update_schedule(&self, schedule: Schedule) -> Result<Schedule, StoreError> {
         validate_schedule(&schedule)?;
-        let conn = self.connection()?;
+        let mut conn = self.connection()?;
+        let tx = conn.transaction()?;
         let windows_json = serde_json::to_string(&schedule.windows)?;
-        let changed = conn.execute(
+        let changed = tx.execute(
             include_str!("../sql/schedule/update.sql"),
             params![
                 schedule.team_id,
@@ -304,12 +471,49 @@ impl FleetStore {
             return Err(StoreError::not_found("schedule", schedule.id));
         }
 
+        record_audit_event(
+            &tx,
+            NewAuditEvent {
+                team_id: Some(schedule.team_id.clone()),
+                entity_type: "schedule".to_string(),
+                entity_id: schedule.id.clone(),
+                action: "updated".to_string(),
+                actor_type: "system".to_string(),
+                actor_id: None,
+                summary: format!("Updated schedule {}", schedule.id),
+                details: serde_json::json!({
+                    "policy_kind": policy_kind_to_text(schedule.policy_kind),
+                    "timezone": schedule.timezone,
+                    "enabled": schedule.enabled,
+                    "window_count": schedule.windows.len(),
+                }),
+            },
+        )?;
+        tx.commit()?;
+
         Ok(schedule)
     }
 
     pub fn delete_schedule(&self, id: &str) -> Result<bool, StoreError> {
-        let conn = self.connection()?;
-        let changed = conn.execute(include_str!("../sql/schedule/delete.sql"), params![id])?;
+        let mut conn = self.connection()?;
+        let tx = conn.transaction()?;
+        let changed = tx.execute(include_str!("../sql/schedule/delete.sql"), params![id])?;
+        if changed > 0 {
+            record_audit_event(
+                &tx,
+                NewAuditEvent {
+                    team_id: None,
+                    entity_type: "schedule".to_string(),
+                    entity_id: id.to_string(),
+                    action: "deleted".to_string(),
+                    actor_type: "system".to_string(),
+                    actor_id: None,
+                    summary: format!("Deleted schedule {id}"),
+                    details: serde_json::json!({}),
+                },
+            )?;
+            tx.commit()?;
+        }
         Ok(changed > 0)
     }
 
@@ -352,6 +556,26 @@ fn parse_datetime_sql(column: usize, value: String) -> rusqlite::Result<DateTime
 
 fn bool_from_i64(value: i64) -> bool {
     value != 0
+}
+
+fn audit_event_from_row(row: &Row<'_>) -> Result<AuditEvent, rusqlite::Error> {
+    let details_json: String = row.get(8)?;
+    let details: serde_json::Value = serde_json::from_str(&details_json).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(8, Type::Text, Box::new(error))
+    })?;
+
+    Ok(AuditEvent {
+        id: row.get(0)?,
+        team_id: row.get(1)?,
+        entity_type: row.get(2)?,
+        entity_id: row.get(3)?,
+        action: row.get(4)?,
+        actor_type: row.get(5)?,
+        actor_id: row.get(6)?,
+        summary: row.get(7)?,
+        details,
+        occurred_at: parse_datetime_sql(9, row.get::<_, String>(9)?)?,
+    })
 }
 
 fn policy_kind_to_text(policy_kind: SchedulePolicyKind) -> &'static str {
@@ -515,11 +739,55 @@ fn schedule_from_row(row: &Row<'_>) -> Result<Schedule, rusqlite::Error> {
     })
 }
 
+fn record_audit_event(conn: &Connection, input: NewAuditEvent) -> Result<AuditEvent, StoreError> {
+    append_audit_event_with_connection(conn, input)
+}
+
+fn append_audit_event_with_connection(
+    conn: &Connection,
+    input: NewAuditEvent,
+) -> Result<AuditEvent, StoreError> {
+    input.validate()?;
+    let audit_event = AuditEvent {
+        id: new_id("audit_event"),
+        team_id: input.team_id,
+        entity_type: input.entity_type,
+        entity_id: input.entity_id,
+        action: input.action,
+        actor_type: input.actor_type,
+        actor_id: input.actor_id,
+        summary: input.summary,
+        details: input.details,
+        occurred_at: Utc::now(),
+    };
+
+    conn.execute(
+        include_str!("../sql/audit_event/insert.sql"),
+        params![
+            audit_event.id,
+            audit_event.team_id,
+            audit_event.entity_type,
+            audit_event.entity_id,
+            audit_event.action,
+            audit_event.actor_type,
+            audit_event.actor_id,
+            audit_event.summary,
+            audit_event.details.to_string(),
+            audit_event.occurred_at.to_rfc3339(),
+        ],
+    )?;
+
+    Ok(audit_event)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ao_fleet_core::{NewProject, NewSchedule, NewTeam, SchedulePolicyKind, WeekdayWindow};
+    use ao_fleet_core::{
+        NewAuditEvent, NewProject, NewSchedule, NewTeam, SchedulePolicyKind, WeekdayWindow,
+    };
     use chrono::Utc;
+    use serde_json::json;
 
     #[test]
     fn store_crud_round_trip() {
@@ -625,5 +893,34 @@ mod tests {
 
         assert!(store.delete_team(&team.id).expect("team deleted"));
         assert!(store.get_team(&team.id).expect("team fetched").is_none());
+
+        assert_eq!(
+            store.list_audit_events(Some(&team.id), None).expect("audit events listed").len(),
+            7
+        );
+    }
+
+    #[test]
+    fn audit_event_append_and_list_round_trip() {
+        let store = FleetStore::open_in_memory().expect("store opens");
+
+        let event = store
+            .append_audit_event(NewAuditEvent {
+                team_id: Some("team-123".to_string()),
+                entity_type: "team".to_string(),
+                entity_id: "team-123".to_string(),
+                action: "created".to_string(),
+                actor_type: "system".to_string(),
+                actor_id: None,
+                summary: "Created team".to_string(),
+                details: json!({"source": "test"}),
+            })
+            .expect("event appended");
+
+        assert_eq!(event.team_id.as_deref(), Some("team-123"));
+        assert_eq!(
+            store.list_audit_events(Some("team-123"), None).expect("audit events listed").len(),
+            1
+        );
     }
 }

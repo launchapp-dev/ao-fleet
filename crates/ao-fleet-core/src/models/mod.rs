@@ -1,4 +1,6 @@
+pub mod audit_event;
 pub mod daemon_desired_state;
+pub mod new_audit_event;
 pub mod new_project;
 pub mod new_schedule;
 pub mod new_team;

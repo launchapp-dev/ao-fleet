@@ -2,7 +2,9 @@ pub mod errors;
 pub mod models;
 
 pub use errors::fleet_error::FleetError;
+pub use models::audit_event::AuditEvent;
 pub use models::daemon_desired_state::DaemonDesiredState;
+pub use models::new_audit_event::NewAuditEvent;
 pub use models::new_project::NewProject;
 pub use models::new_schedule::NewSchedule;
 pub use models::new_team::NewTeam;
