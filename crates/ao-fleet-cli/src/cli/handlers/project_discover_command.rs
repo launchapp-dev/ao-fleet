@@ -11,6 +11,9 @@ pub struct ProjectDiscoverCommand {
     #[arg(long, default_value_t = false)]
     pub register: bool,
 
+    #[arg(long, default_value_t = false)]
+    pub include_ao_shells: bool,
+
     #[arg(long)]
     pub team_id: Option<String>,
 }

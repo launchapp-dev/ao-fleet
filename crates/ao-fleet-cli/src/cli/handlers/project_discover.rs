@@ -13,7 +13,8 @@ use crate::cli::handlers::project_discover_command::ProjectDiscoverCommand;
 pub fn project_discover(db_path: &str, command: ProjectDiscoverCommand) -> Result<()> {
     let store = FleetStore::open(db_path)?;
     let search_roots = resolve_search_roots(command.search_roots)?;
-    let discovered = discover_all_projects(&search_roots, command.max_depth)?;
+    let discovered =
+        discover_all_projects(&search_roots, command.max_depth, command.include_ao_shells)?;
     let registered_projects = store.list_projects(None)?;
     let registered_lookup = build_registered_lookup(&registered_projects);
     let mut used_slugs: BTreeSet<String> =
@@ -67,6 +68,7 @@ pub fn project_discover(db_path: &str, command: ProjectDiscoverCommand) -> Resul
             .collect(),
         max_depth: command.max_depth,
         register: command.register,
+        include_ao_shells: command.include_ao_shells,
         team_id: command.team_id,
         discovered_count: results.len(),
         registered_count,
@@ -79,6 +81,7 @@ struct ProjectDiscoverResult {
     search_roots: Vec<String>,
     max_depth: usize,
     register: bool,
+    include_ao_shells: bool,
     team_id: Option<String>,
     discovered_count: usize,
     registered_count: usize,
@@ -144,12 +147,13 @@ fn resolve_search_roots(search_roots: Vec<String>) -> Result<Vec<PathBuf>> {
 fn discover_all_projects(
     search_roots: &[PathBuf],
     max_depth: usize,
+    include_ao_shells: bool,
 ) -> Result<Vec<DiscoveryCandidate>> {
     let mut discovered = Vec::new();
     let mut seen = BTreeSet::new();
 
     for root in search_roots {
-        for candidate in discover_projects_under_root(root, max_depth)? {
+        for candidate in discover_projects_under_root(root, max_depth, include_ao_shells)? {
             if seen.insert(candidate.normalized_root_path.clone()) {
                 discovered.push(candidate);
             }
@@ -160,7 +164,11 @@ fn discover_all_projects(
     Ok(discovered)
 }
 
-fn discover_projects_under_root(root: &Path, max_depth: usize) -> Result<Vec<DiscoveryCandidate>> {
+fn discover_projects_under_root(
+    root: &Path,
+    max_depth: usize,
+    include_ao_shells: bool,
+) -> Result<Vec<DiscoveryCandidate>> {
     let mut discovered = Vec::new();
     let mut queue = VecDeque::from([(root.to_path_buf(), 0_usize)]);
     let mut visited = BTreeSet::new();
@@ -172,7 +180,7 @@ fn discover_projects_under_root(root: &Path, max_depth: usize) -> Result<Vec<Dis
             continue;
         }
 
-        if let Some(candidate) = classify_project_root(&normalized)? {
+        if let Some(candidate) = classify_project_root(&normalized, include_ao_shells)? {
             discovered.push(candidate);
             continue;
         }
@@ -192,13 +200,20 @@ fn discover_projects_under_root(root: &Path, max_depth: usize) -> Result<Vec<Dis
     Ok(discovered)
 }
 
-fn classify_project_root(path: &Path) -> Result<Option<DiscoveryCandidate>> {
+fn classify_project_root(
+    path: &Path,
+    include_ao_shells: bool,
+) -> Result<Option<DiscoveryCandidate>> {
     let git_marker = path.join(".git");
     let ao_marker = path.join(".ao");
     let has_git = git_marker.exists();
     let has_ao = ao_marker.is_dir();
 
     if !(has_git || has_ao) {
+        return Ok(None);
+    }
+
+    if has_ao && !has_git && !include_ao_shells && is_ao_shell(path)? {
         return Ok(None);
     }
 
@@ -269,6 +284,24 @@ fn should_skip_directory(path: &Path) -> bool {
             | "venv"
             | "__pycache__"
     )
+}
+
+fn is_ao_shell(path: &Path) -> Result<bool> {
+    let mut non_ao_entries = 0_usize;
+    for entry in fs::read_dir(path).with_context(|| format!("failed to read {}", path.display()))? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            non_ao_entries += 1;
+            continue;
+        };
+
+        if name != ".ao" {
+            non_ao_entries += 1;
+        }
+    }
+
+    Ok(non_ao_entries == 0)
 }
 
 fn normalize_existing_path(path: &Path) -> Result<PathBuf> {
@@ -353,7 +386,7 @@ mod tests {
         write(git_root.join(".git/HEAD"), "ref: refs/heads/trunk\n").expect("head should exist");
 
         let discovered =
-            discover_projects_under_root(temp.path(), 4).expect("discovery should succeed");
+            discover_projects_under_root(temp.path(), 4, false).expect("discovery should succeed");
 
         assert_eq!(discovered.len(), 2);
         assert!(
@@ -371,5 +404,30 @@ mod tests {
         let slug = allocate_unique_slug("app".to_string(), &mut used);
 
         assert_eq!(slug, "app-3");
+    }
+
+    #[test]
+    fn excludes_ao_only_shells_by_default() {
+        let temp = tempfile::tempdir().expect("temp dir should exist");
+        let shell_root = temp.path().join("shell");
+        create_dir_all(shell_root.join(".ao")).expect("ao dir should exist");
+
+        let discovered =
+            discover_projects_under_root(temp.path(), 2, false).expect("discovery should succeed");
+
+        assert!(discovered.is_empty());
+    }
+
+    #[test]
+    fn includes_ao_only_shells_when_requested() {
+        let temp = tempfile::tempdir().expect("temp dir should exist");
+        let shell_root = temp.path().join("shell");
+        create_dir_all(shell_root.join(".ao")).expect("ao dir should exist");
+
+        let discovered =
+            discover_projects_under_root(temp.path(), 2, true).expect("discovery should succeed");
+
+        assert_eq!(discovered.len(), 1);
+        assert_eq!(discovered[0].slug_hint, "shell");
     }
 }

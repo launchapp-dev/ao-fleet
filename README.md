@@ -90,6 +90,14 @@ cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db project-discover \
   --search-root /Users/me/workspaces
 ```
 
+By default, discovery skips AO-only shell directories whose only entry is `.ao`. Include those explicitly if you want them:
+
+```bash
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db project-discover \
+  --search-root /Users/me/repos \
+  --include-ao-shells
+```
+
 Register any discovered projects that are not already in the fleet:
 
 ```bash
