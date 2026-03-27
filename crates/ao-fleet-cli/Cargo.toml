@@ -16,3 +16,6 @@ ao-fleet-knowledge = { path = "../ao-fleet-knowledge" }
 ao-fleet-mcp = { path = "../ao-fleet-mcp" }
 ao-fleet-scheduler = { path = "../ao-fleet-scheduler" }
 ao-fleet-store = { path = "../ao-fleet-store" }
+
+[dev-dependencies]
+tempfile = "3.23.0"

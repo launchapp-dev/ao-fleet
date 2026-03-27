@@ -81,6 +81,23 @@ cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db team-create \
   --business-priority 90
 ```
 
+Discover repos and `.ao` projects under configured workspace roots:
+
+```bash
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db project-discover \
+  --search-root /Users/me/repos \
+  --search-root /Users/me/workspaces
+```
+
+Register discovered projects into a team:
+
+```bash
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db project-discover \
+  --search-root /Users/me/repos \
+  --register \
+  --team-id <TEAM_ID>
+```
+
 Attach a repo to a team:
 
 ```bash

@@ -47,6 +47,8 @@ pub mod project_create_command;
 pub mod project_daemon_target;
 pub mod project_delete;
 pub mod project_delete_command;
+pub mod project_discover;
+pub mod project_discover_command;
 pub mod project_get;
 pub mod project_get_command;
 pub mod project_host_assign;

@@ -82,6 +82,23 @@ cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db project-create \
   --enabled
 ```
 
+Discover existing repos and `.ao` projects under one or more workspace roots:
+
+```bash
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db project-discover \
+  --search-root /Users/me/repos \
+  --search-root /Users/me/workspaces
+```
+
+Register any discovered projects that are not already in the fleet:
+
+```bash
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db project-discover \
+  --search-root /Users/me/repos \
+  --register \
+  --team-id <TEAM_ID>
+```
+
 Register a founder-managed host and assign a project to it:
 
 ```bash
