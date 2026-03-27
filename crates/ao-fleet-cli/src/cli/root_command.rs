@@ -3,6 +3,12 @@ use clap::{Parser, Subcommand};
 use crate::cli::handlers::audit_list_command::AuditListCommand;
 use crate::cli::handlers::daemon_reconcile_command::DaemonReconcileCommand;
 use crate::cli::handlers::db_init_command::DbInitCommand;
+use crate::cli::handlers::knowledge_document_create_command::KnowledgeDocumentCreateCommand;
+use crate::cli::handlers::knowledge_document_list_command::KnowledgeDocumentListCommand;
+use crate::cli::handlers::knowledge_fact_create_command::KnowledgeFactCreateCommand;
+use crate::cli::handlers::knowledge_fact_list_command::KnowledgeFactListCommand;
+use crate::cli::handlers::knowledge_source_list_command::KnowledgeSourceListCommand;
+use crate::cli::handlers::knowledge_source_upsert_command::KnowledgeSourceUpsertCommand;
 use crate::cli::handlers::mcp_list_command::McpListCommand;
 use crate::cli::handlers::mcp_serve_command::McpServeCommand;
 use crate::cli::handlers::project_create_command::ProjectCreateCommand;
@@ -51,6 +57,12 @@ pub enum CommandGroup {
     ScheduleList(ScheduleListCommand),
     ScheduleUpdate(ScheduleUpdateCommand),
     ScheduleDelete(ScheduleDeleteCommand),
+    KnowledgeSourceUpsert(KnowledgeSourceUpsertCommand),
+    KnowledgeSourceList(KnowledgeSourceListCommand),
+    KnowledgeDocumentCreate(KnowledgeDocumentCreateCommand),
+    KnowledgeDocumentList(KnowledgeDocumentListCommand),
+    KnowledgeFactCreate(KnowledgeFactCreateCommand),
+    KnowledgeFactList(KnowledgeFactListCommand),
     DaemonReconcile(DaemonReconcileCommand),
     McpList(McpListCommand),
     McpServe(McpServeCommand),

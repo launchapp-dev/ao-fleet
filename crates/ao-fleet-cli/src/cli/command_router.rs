@@ -3,6 +3,12 @@ use anyhow::Result;
 use crate::cli::handlers::audit_list::audit_list;
 use crate::cli::handlers::daemon_reconcile::daemon_reconcile;
 use crate::cli::handlers::db_init::db_init;
+use crate::cli::handlers::knowledge_document_create::knowledge_document_create;
+use crate::cli::handlers::knowledge_document_list::knowledge_document_list;
+use crate::cli::handlers::knowledge_fact_create::knowledge_fact_create;
+use crate::cli::handlers::knowledge_fact_list::knowledge_fact_list;
+use crate::cli::handlers::knowledge_source_list::knowledge_source_list;
+use crate::cli::handlers::knowledge_source_upsert::knowledge_source_upsert;
 use crate::cli::handlers::mcp_list::mcp_list;
 use crate::cli::handlers::mcp_serve::mcp_serve;
 use crate::cli::handlers::project_create::project_create;
@@ -41,6 +47,18 @@ pub fn route_command(root: RootCommand) -> Result<()> {
         CommandGroup::ScheduleList(command) => schedule_list(&root.db_path, command),
         CommandGroup::ScheduleUpdate(command) => schedule_update(&root.db_path, command),
         CommandGroup::ScheduleDelete(command) => schedule_delete(&root.db_path, command),
+        CommandGroup::KnowledgeSourceUpsert(command) => {
+            knowledge_source_upsert(&root.db_path, command)
+        }
+        CommandGroup::KnowledgeSourceList(command) => knowledge_source_list(&root.db_path, command),
+        CommandGroup::KnowledgeDocumentCreate(command) => {
+            knowledge_document_create(&root.db_path, command)
+        }
+        CommandGroup::KnowledgeDocumentList(command) => {
+            knowledge_document_list(&root.db_path, command)
+        }
+        CommandGroup::KnowledgeFactCreate(command) => knowledge_fact_create(&root.db_path, command),
+        CommandGroup::KnowledgeFactList(command) => knowledge_fact_list(&root.db_path, command),
         CommandGroup::DaemonReconcile(command) => daemon_reconcile(&root.db_path, command),
         CommandGroup::McpList(command) => mcp_list(command),
         CommandGroup::McpServe(command) => mcp_serve(&root.db_path, command),

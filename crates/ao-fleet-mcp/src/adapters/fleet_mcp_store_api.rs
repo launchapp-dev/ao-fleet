@@ -11,7 +11,10 @@ use chrono::Utc;
 use crate::api::fleet_mcp_api::FleetMcpApi;
 use crate::error::fleet_mcp_error::FleetMcpError;
 use crate::inputs::daemon_reconcile_input::DaemonReconcileInput;
+use crate::inputs::knowledge_document_create_input::KnowledgeDocumentCreateInput;
+use crate::inputs::knowledge_fact_create_input::KnowledgeFactCreateInput;
 use crate::inputs::knowledge_record_list_input::KnowledgeRecordListInput;
+use crate::inputs::knowledge_source_upsert_input::KnowledgeSourceUpsertInput;
 use crate::inputs::project_create_input::ProjectCreateInput;
 use crate::inputs::project_list_input::ProjectListInput;
 use crate::inputs::schedule_create_input::ScheduleCreateInput;
@@ -114,6 +117,73 @@ impl FleetMcpApi for FleetMcpStoreApi {
         input: KnowledgeRecordListInput,
     ) -> Result<Vec<KnowledgeFact>, FleetMcpError> {
         self.store.list_knowledge_facts(record_query_from_input(input)).map_err(Into::into)
+    }
+
+    fn upsert_knowledge_source(
+        &self,
+        input: KnowledgeSourceUpsertInput,
+    ) -> Result<KnowledgeSource, FleetMcpError> {
+        let now = Utc::now();
+        self.store
+            .upsert_knowledge_source(KnowledgeSource {
+                id: input.id.unwrap_or_default(),
+                kind: input.kind,
+                label: input.label,
+                uri: input.uri,
+                scope: input.scope,
+                scope_ref: input.scope_ref,
+                sync_state: input.sync_state,
+                last_synced_at: input.last_synced_at,
+                metadata: input.metadata,
+                created_at: now,
+                updated_at: now,
+            })
+            .map_err(Into::into)
+    }
+
+    fn create_knowledge_document(
+        &self,
+        input: KnowledgeDocumentCreateInput,
+    ) -> Result<KnowledgeDocument, FleetMcpError> {
+        let now = Utc::now();
+        self.store
+            .create_knowledge_document(KnowledgeDocument {
+                id: input.id.unwrap_or_default(),
+                scope: input.scope,
+                scope_ref: input.scope_ref,
+                kind: input.kind,
+                title: input.title,
+                summary: input.summary,
+                body: input.body,
+                source_id: input.source_id,
+                source_kind: input.source_kind,
+                tags: input.tags,
+                created_at: now,
+                updated_at: now,
+            })
+            .map_err(Into::into)
+    }
+
+    fn create_knowledge_fact(
+        &self,
+        input: KnowledgeFactCreateInput,
+    ) -> Result<KnowledgeFact, FleetMcpError> {
+        let now = Utc::now();
+        self.store
+            .create_knowledge_fact(KnowledgeFact {
+                id: input.id.unwrap_or_default(),
+                scope: input.scope,
+                scope_ref: input.scope_ref,
+                kind: input.kind,
+                statement: input.statement,
+                confidence: input.confidence,
+                source_id: input.source_id,
+                source_kind: input.source_kind,
+                tags: input.tags,
+                observed_at: input.observed_at.unwrap_or(now),
+                created_at: now,
+            })
+            .map_err(Into::into)
     }
 
     fn reconcile_daemons(

@@ -3,7 +3,10 @@ use ao_fleet_store::{FleetOverview, FleetOverviewQuery};
 
 use crate::error::fleet_mcp_error::FleetMcpError;
 use crate::inputs::daemon_reconcile_input::DaemonReconcileInput;
+use crate::inputs::knowledge_document_create_input::KnowledgeDocumentCreateInput;
+use crate::inputs::knowledge_fact_create_input::KnowledgeFactCreateInput;
 use crate::inputs::knowledge_record_list_input::KnowledgeRecordListInput;
+use crate::inputs::knowledge_source_upsert_input::KnowledgeSourceUpsertInput;
 use crate::inputs::project_create_input::ProjectCreateInput;
 use crate::inputs::project_list_input::ProjectListInput;
 use crate::inputs::schedule_create_input::ScheduleCreateInput;
@@ -41,6 +44,21 @@ pub trait FleetMcpApi {
         &self,
         input: KnowledgeRecordListInput,
     ) -> Result<Vec<KnowledgeFact>, FleetMcpError>;
+
+    fn upsert_knowledge_source(
+        &self,
+        input: KnowledgeSourceUpsertInput,
+    ) -> Result<KnowledgeSource, FleetMcpError>;
+
+    fn create_knowledge_document(
+        &self,
+        input: KnowledgeDocumentCreateInput,
+    ) -> Result<KnowledgeDocument, FleetMcpError>;
+
+    fn create_knowledge_fact(
+        &self,
+        input: KnowledgeFactCreateInput,
+    ) -> Result<KnowledgeFact, FleetMcpError>;
 
     fn reconcile_daemons(
         &self,

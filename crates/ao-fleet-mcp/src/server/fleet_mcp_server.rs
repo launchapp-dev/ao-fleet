@@ -113,11 +113,20 @@ impl<H: FleetMcpApi> FleetMcpServer<H> {
             "fleet.knowledge.source.list" => self.to_tool_result(
                 self.handlers.list_knowledge_sources(parse_optional_input(call.arguments)?)?,
             ),
+            "fleet.knowledge.source.upsert" => self.to_tool_result(
+                self.handlers.upsert_knowledge_source(parse_required_input(call.arguments)?)?,
+            ),
             "fleet.knowledge.document.list" => self.to_tool_result(
                 self.handlers.list_knowledge_documents(parse_optional_input(call.arguments)?)?,
             ),
+            "fleet.knowledge.document.create" => self.to_tool_result(
+                self.handlers.create_knowledge_document(parse_required_input(call.arguments)?)?,
+            ),
             "fleet.knowledge.fact.list" => self.to_tool_result(
                 self.handlers.list_knowledge_facts(parse_optional_input(call.arguments)?)?,
+            ),
+            "fleet.knowledge.fact.create" => self.to_tool_result(
+                self.handlers.create_knowledge_fact(parse_required_input(call.arguments)?)?,
             ),
             "fleet.team.list" => self
                 .to_tool_result(self.handlers.list_teams(parse_optional_input(call.arguments)?)?),
@@ -299,7 +308,10 @@ mod tests {
     use crate::api::fleet_mcp_api::FleetMcpApi;
     use crate::error::fleet_mcp_error::FleetMcpError;
     use crate::inputs::daemon_reconcile_input::DaemonReconcileInput;
+    use crate::inputs::knowledge_document_create_input::KnowledgeDocumentCreateInput;
+    use crate::inputs::knowledge_fact_create_input::KnowledgeFactCreateInput;
     use crate::inputs::knowledge_record_list_input::KnowledgeRecordListInput;
+    use crate::inputs::knowledge_source_upsert_input::KnowledgeSourceUpsertInput;
     use crate::inputs::project_create_input::ProjectCreateInput;
     use crate::inputs::project_list_input::ProjectListInput;
     use crate::inputs::schedule_create_input::ScheduleCreateInput;
@@ -472,6 +484,47 @@ mod tests {
             }])
         }
 
+        fn upsert_knowledge_source(
+            &self,
+            input: KnowledgeSourceUpsertInput,
+        ) -> Result<KnowledgeSource, FleetMcpError> {
+            self.calls.borrow_mut().push("upsert_knowledge_source".to_string());
+            Ok(KnowledgeSource {
+                id: input.id.unwrap_or_else(|| "source-2".to_string()),
+                kind: input.kind,
+                label: input.label,
+                uri: input.uri,
+                scope: input.scope,
+                scope_ref: input.scope_ref,
+                sync_state: input.sync_state,
+                last_synced_at: input.last_synced_at,
+                metadata: input.metadata,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            })
+        }
+
+        fn create_knowledge_document(
+            &self,
+            input: KnowledgeDocumentCreateInput,
+        ) -> Result<KnowledgeDocument, FleetMcpError> {
+            self.calls.borrow_mut().push("create_knowledge_document".to_string());
+            Ok(KnowledgeDocument {
+                id: input.id.unwrap_or_else(|| "document-2".to_string()),
+                scope: input.scope,
+                scope_ref: input.scope_ref,
+                kind: input.kind,
+                title: input.title,
+                summary: input.summary,
+                body: input.body,
+                source_id: input.source_id,
+                source_kind: input.source_kind,
+                tags: input.tags,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            })
+        }
+
         fn list_knowledge_facts(
             &self,
             _input: KnowledgeRecordListInput,
@@ -490,6 +543,26 @@ mod tests {
                 observed_at: Utc::now(),
                 created_at: Utc::now(),
             }])
+        }
+
+        fn create_knowledge_fact(
+            &self,
+            input: KnowledgeFactCreateInput,
+        ) -> Result<KnowledgeFact, FleetMcpError> {
+            self.calls.borrow_mut().push("create_knowledge_fact".to_string());
+            Ok(KnowledgeFact {
+                id: input.id.unwrap_or_else(|| "fact-2".to_string()),
+                scope: input.scope,
+                scope_ref: input.scope_ref,
+                kind: input.kind,
+                statement: input.statement,
+                confidence: input.confidence,
+                source_id: input.source_id,
+                source_kind: input.source_kind,
+                tags: input.tags,
+                observed_at: input.observed_at.unwrap_or_else(Utc::now),
+                created_at: Utc::now(),
+            })
         }
 
         fn list_projects(&self, _input: ProjectListInput) -> Result<Vec<Project>, FleetMcpError> {
@@ -629,6 +702,23 @@ mod tests {
     }
 
     #[test]
+    fn tools_call_routes_knowledge_source_upsert() {
+        let server = FleetMcpServer::new(MockHandlers::default());
+        let response = server
+            .handle_message(
+                r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"fleet.knowledge.source.upsert","arguments":{"kind":"manual_note","label":"Operator note","scope":"team","scope_ref":"team-1","sync_state":"ready","metadata":{"owner":"ops"}}}}"#,
+            )
+            .expect("message handled")
+            .expect("response returned");
+
+        let payload: serde_json::Value = serde_json::from_str(&response).expect("valid response");
+        let text = payload["result"]["content"][0]["text"].as_str().expect("text content");
+
+        assert!(text.contains("\"Operator note\""), "response: {response}");
+        assert!(text.contains("\"sync_state\": \"ready\""), "response: {response}");
+    }
+
+    #[test]
     fn tools_list_returns_surface() {
         let server = FleetMcpServer::new(MockHandlers::default());
         let response = server
@@ -640,5 +730,6 @@ mod tests {
         assert!(response.contains("\"fleet.daemon.reconcile\""));
         assert!(response.contains("\"fleet.overview\""));
         assert!(response.contains("\"fleet.knowledge.document.list\""));
+        assert!(response.contains("\"fleet.knowledge.source.upsert\""));
     }
 }

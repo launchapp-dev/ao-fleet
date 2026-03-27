@@ -29,8 +29,11 @@ impl FleetMcpSurface {
             tools: vec![
                 overview_tool(),
                 knowledge_source_list_tool(),
+                knowledge_source_upsert_tool(),
                 knowledge_document_list_tool(),
+                knowledge_document_create_tool(),
                 knowledge_fact_list_tool(),
+                knowledge_fact_create_tool(),
                 team_list_tool(),
                 team_create_tool(),
                 project_list_tool(),
@@ -114,6 +117,233 @@ fn knowledge_fact_list_tool() -> McpToolDescriptor {
             "List knowledge facts with optional scope filters".to_string(),
         ),
         tags: vec!["knowledge".to_string(), "read".to_string(), "fact".to_string()],
+    }
+}
+
+fn knowledge_source_upsert_tool() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "fleet.knowledge.source.upsert".to_string(),
+        description: "Create or update a knowledge ingestion source".to_string(),
+        input_schema: schema_with_properties(
+            "Create or update a knowledge source".to_string(),
+            vec![
+                string_property("id", "Optional source id for updates", false, "source_ops_note"),
+                enum_property(
+                    "kind",
+                    "Knowledge source kind",
+                    true,
+                    vec![
+                        "ao_event",
+                        "git_commit",
+                        "github_issue",
+                        "github_pull_request",
+                        "manual_note",
+                        "incident",
+                        "schedule_change",
+                        "workflow_run",
+                    ],
+                    "manual_note",
+                ),
+                string_property("label", "Human-friendly source label", true, "Operator note"),
+                string_property("uri", "Optional source URI", false, "file:///tmp/note.md"),
+                enum_property(
+                    "scope",
+                    "Knowledge scope",
+                    true,
+                    vec!["global", "team", "project", "operational"],
+                    "team",
+                ),
+                string_property(
+                    "scope_ref",
+                    "Optional team or project identifier",
+                    false,
+                    "team_marketing",
+                ),
+                enum_property(
+                    "sync_state",
+                    "Current ingestion sync state",
+                    true,
+                    vec!["pending", "ready", "stale", "failed"],
+                    "ready",
+                ),
+                string_property(
+                    "last_synced_at",
+                    "Optional RFC 3339 timestamp for the last successful sync",
+                    false,
+                    "2025-03-03T10:00:00Z",
+                ),
+                object_property(
+                    "metadata",
+                    "Arbitrary source metadata",
+                    true,
+                    serde_json::json!({ "author": "ops" }),
+                ),
+            ],
+            vec![
+                "kind".to_string(),
+                "label".to_string(),
+                "scope".to_string(),
+                "sync_state".to_string(),
+                "metadata".to_string(),
+            ],
+        ),
+        tags: vec!["knowledge".to_string(), "write".to_string(), "source".to_string()],
+    }
+}
+
+fn knowledge_document_create_tool() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "fleet.knowledge.document.create".to_string(),
+        description: "Create a persisted knowledge document".to_string(),
+        input_schema: schema_with_properties(
+            "Create a knowledge document".to_string(),
+            vec![
+                string_property("id", "Optional document id", false, "document_oncall_runbook"),
+                enum_property(
+                    "scope",
+                    "Knowledge scope",
+                    true,
+                    vec!["global", "team", "project", "operational"],
+                    "team",
+                ),
+                string_property(
+                    "scope_ref",
+                    "Optional team or project identifier",
+                    false,
+                    "team_marketing",
+                ),
+                enum_property(
+                    "kind",
+                    "Knowledge document kind",
+                    true,
+                    vec![
+                        "brief",
+                        "decision",
+                        "runbook",
+                        "research_note",
+                        "team_profile",
+                        "project_profile",
+                        "incident_report",
+                        "policy_note",
+                    ],
+                    "runbook",
+                ),
+                string_property("title", "Document title", true, "On-call runbook"),
+                string_property("summary", "Short summary", true, "Restart steps"),
+                string_property(
+                    "body",
+                    "Document body",
+                    true,
+                    "Restart the daemon if health stays red.",
+                ),
+                string_property("source_id", "Optional source id", false, "source_ops_note"),
+                enum_property(
+                    "source_kind",
+                    "Optional source kind",
+                    false,
+                    vec![
+                        "ao_event",
+                        "git_commit",
+                        "github_issue",
+                        "github_pull_request",
+                        "manual_note",
+                        "incident",
+                        "schedule_change",
+                        "workflow_run",
+                    ],
+                    "manual_note",
+                ),
+                array_property("tags", "Tag list", true, serde_json::json!(["ops", "runbook"])),
+            ],
+            vec![
+                "scope".to_string(),
+                "kind".to_string(),
+                "title".to_string(),
+                "summary".to_string(),
+                "body".to_string(),
+                "tags".to_string(),
+            ],
+        ),
+        tags: vec!["knowledge".to_string(), "write".to_string(), "document".to_string()],
+    }
+}
+
+fn knowledge_fact_create_tool() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "fleet.knowledge.fact.create".to_string(),
+        description: "Create a persisted knowledge fact".to_string(),
+        input_schema: schema_with_properties(
+            "Create a knowledge fact".to_string(),
+            vec![
+                string_property("id", "Optional fact id", false, "fact_team_policy"),
+                enum_property(
+                    "scope",
+                    "Knowledge scope",
+                    true,
+                    vec!["global", "team", "project", "operational"],
+                    "team",
+                ),
+                string_property(
+                    "scope_ref",
+                    "Optional team or project identifier",
+                    false,
+                    "team_marketing",
+                ),
+                enum_property(
+                    "kind",
+                    "Knowledge fact kind",
+                    true,
+                    vec![
+                        "policy",
+                        "decision",
+                        "risk",
+                        "incident",
+                        "workflow_outcome",
+                        "schedule_observation",
+                    ],
+                    "policy",
+                ),
+                string_property(
+                    "statement",
+                    "Fact statement",
+                    true,
+                    "Marketing owns launch messaging",
+                ),
+                integer_property("confidence", "Confidence score from 0 to 100", true, 95),
+                string_property("source_id", "Optional source id", false, "source_ops_note"),
+                enum_property(
+                    "source_kind",
+                    "Optional source kind",
+                    false,
+                    vec![
+                        "ao_event",
+                        "git_commit",
+                        "github_issue",
+                        "github_pull_request",
+                        "manual_note",
+                        "incident",
+                        "schedule_change",
+                        "workflow_run",
+                    ],
+                    "manual_note",
+                ),
+                array_property("tags", "Tag list", true, serde_json::json!(["policy"])),
+                string_property(
+                    "observed_at",
+                    "Optional RFC 3339 observation timestamp",
+                    false,
+                    "2025-03-03T10:00:00Z",
+                ),
+            ],
+            vec![
+                "scope".to_string(),
+                "kind".to_string(),
+                "statement".to_string(),
+                "confidence".to_string(),
+                "tags".to_string(),
+            ],
+        ),
+        tags: vec!["knowledge".to_string(), "write".to_string(), "fact".to_string()],
     }
 }
 
@@ -459,8 +689,11 @@ mod tests {
             vec![
                 "fleet.overview",
                 "fleet.knowledge.source.list",
+                "fleet.knowledge.source.upsert",
                 "fleet.knowledge.document.list",
+                "fleet.knowledge.document.create",
                 "fleet.knowledge.fact.list",
+                "fleet.knowledge.fact.create",
                 "fleet.team.list",
                 "fleet.team.create",
                 "fleet.project.list",
