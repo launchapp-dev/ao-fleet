@@ -29,6 +29,34 @@ List the current team inventory:
 cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db team-list
 ```
 
+## Founder Bootstrap And Service Mode
+
+For Phase 1, run `ao-fleet` like a founder-operated company control plane:
+
+1. Initialize one persistent database path.
+2. Register the company teams.
+3. Attach the repos or workspaces each team owns.
+4. Add schedules and knowledge records.
+5. Export a config snapshot before major changes or upgrades.
+6. Run `mcp-serve` as the long-lived service process.
+7. Run `daemon-status --refresh` and `daemon-reconcile --apply` on a timer until remote AO CLI execution exists.
+
+In practice, that means a service manager such as `systemd` or `launchd` should own the MCP server process, while a separate timer or cron entry can refresh daemon state and reconcile schedules. Keep the database path and snapshot export path stable so backup and restore stay simple.
+
+Export a snapshot whenever you want a recoverable seed of the company state:
+
+```bash
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db config-snapshot-export --output /tmp/ao-fleet.snapshot.json
+```
+
+A minimal service unit looks like this:
+
+```ini
+[Service]
+ExecStart=/usr/local/bin/ao-fleet-cli --db-path /var/lib/ao-fleet/ao-fleet.db mcp-serve
+Restart=always
+```
+
 ## Create Teams And Projects
 
 Create a marketing team:
@@ -69,6 +97,46 @@ Read back the project inventory:
 
 ```bash
 cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db project-list
+```
+
+## Register Hosts And Placement Intent
+
+Phase 1 host support is about placement intent, not remote execution. It lets the founder model which machine should own which project before AO CLI grows the remote-control surface.
+
+Register a host:
+
+```bash
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db host-create \
+  --slug founder-mac \
+  --name "Founder Mac" \
+  --address founder.local \
+  --platform macos \
+  --status healthy \
+  --capacity-slots 6
+```
+
+List hosts:
+
+```bash
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db host-list
+```
+
+Assign a project to a host:
+
+```bash
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db project-host-assign \
+  --project-id <PROJECT_ID> \
+  --host-id <HOST_ID> \
+  --assignment-source founder
+```
+
+Inspect or clear the placement map:
+
+```bash
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db project-host-list
+
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db project-host-clear \
+  --project-id <PROJECT_ID>
 ```
 
 ## Add Schedules
@@ -129,6 +197,12 @@ Apply the reconcile plan:
 
 ```bash
 cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db daemon-reconcile --apply
+```
+
+Record the last observed daemon state for the fleet:
+
+```bash
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db daemon-status --refresh
 ```
 
 If you have backlog counts per team, pass them in the `team_id=count` format:
@@ -234,13 +308,22 @@ Start the fleet MCP server:
 cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db mcp-serve
 ```
 
-The MCP surface mirrors the CLI and includes:
+The currently implemented MCP surface centers on:
+
+- fleet overview for inventory and reconcile preview
+- daemon status for observed state
+- knowledge search for company memory
+
+The next additions should be:
 
 - `fleet.project.*`
-- `fleet.daemon.*`
 - `fleet.schedule.*`
 - `fleet.audit.*`
-- `fleet.knowledge.*`
+- `fleet.host.*`
+- `fleet.policy.*`
+- `fleet.workflow.*`
+
+Those are the pieces `ao-dashboard` should read once Phase 1 expands beyond the current local-fleet model.
 
 ## Operator Pattern
 
@@ -252,4 +335,3 @@ That means:
 - the app team owns app delivery
 - platform owns fleet policy, shared workflows, and remediation
 - `ao-fleet` keeps the durable company view
-

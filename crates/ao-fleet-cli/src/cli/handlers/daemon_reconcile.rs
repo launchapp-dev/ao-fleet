@@ -3,13 +3,13 @@ use std::collections::BTreeMap;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 
-use ao_fleet_ao::{AoDaemonClient, DaemonCommandResult, DaemonStartOptions, DaemonState};
+use ao_fleet_ao::{AoDaemonClient, DaemonState};
 use ao_fleet_core::{DaemonDesiredState, ObservedDaemonStatus};
 use ao_fleet_scheduler::schedule_evaluator::ScheduleEvaluator;
 use ao_fleet_store::FleetStore;
 
 use crate::cli::handlers::daemon_reconcile_command::DaemonReconcileCommand;
-use crate::cli::handlers::daemon_reconcile_result::DaemonReconcileResult;
+use crate::cli::handlers::daemon_reconcile_support::reconcile_project;
 use crate::cli::handlers::json_printer::print_json;
 
 pub fn daemon_reconcile(db_path: &str, command: DaemonReconcileCommand) -> Result<()> {
@@ -42,26 +42,18 @@ pub fn daemon_reconcile(db_path: &str, command: DaemonReconcileCommand) -> Resul
             continue;
         };
 
-        let observed_state = ao
-            .daemon_status(&project.ao_project_root)
-            .ok()
-            .or_else(|| status_to_daemon_state(&ao, &project.ao_project_root));
-        let action = planned_action(team_state.desired_state, observed_state.clone());
-        let command_result = if command.apply {
-            execute_action(&ao, &project.ao_project_root, action.as_deref())?
-        } else {
-            None
-        };
-        let stored_state = if command.apply {
-            ao.daemon_status(&project.ao_project_root)
-                .ok()
-                .or_else(|| status_to_daemon_state(&ao, &project.ao_project_root))
-                .or(observed_state.clone())
-        } else {
-            observed_state.clone()
-        };
+        let result = reconcile_project(
+            &ao,
+            project.team_id.clone(),
+            project.id.clone(),
+            project.ao_project_root.clone(),
+            team_state.desired_state,
+            team_state.backlog_count,
+            team_state.schedule_ids.clone(),
+            command.apply,
+        )?;
 
-        if let Some(stored_state) = stored_state.clone() {
+        if let Some(stored_state) = result.observed_state.clone() {
             store.upsert_observed_daemon_status(ObservedDaemonStatus {
                 project_id: project.id.clone(),
                 team_id: project.team_id.clone(),
@@ -71,23 +63,14 @@ pub fn daemon_reconcile(db_path: &str, command: DaemonReconcileCommand) -> Resul
                 details: serde_json::json!({
                     "project_root": project.ao_project_root,
                     "raw_state": String::from(stored_state),
-                    "action": action,
+                    "action": result.action,
+                    "command_result": result.command_result,
                     "apply": command.apply,
                 }),
             })?;
         }
 
-        results.push(DaemonReconcileResult {
-            team_id: project.team_id,
-            project_id: project.id,
-            project_root: project.ao_project_root,
-            desired_state: team_state.desired_state,
-            observed_state: stored_state,
-            backlog_count: team_state.backlog_count,
-            schedule_ids: team_state.schedule_ids.clone(),
-            action,
-            command_result,
-        });
+        results.push(result);
     }
 
     print_json(&serde_json::json!({
@@ -132,27 +115,6 @@ fn merge_desired_state(
     }
 }
 
-fn status_to_daemon_state(ao: &AoDaemonClient, project_root: &str) -> Option<DaemonState> {
-    ao.project_status(project_root).ok().map(|report| report.daemon_state)
-}
-
-fn planned_action(
-    desired_state: DaemonDesiredState,
-    observed_state: Option<DaemonState>,
-) -> Option<String> {
-    match (desired_state, observed_state) {
-        (DaemonDesiredState::Running, Some(DaemonState::Running)) => None,
-        (DaemonDesiredState::Running, Some(DaemonState::Paused)) => Some("resume".to_string()),
-        (DaemonDesiredState::Running, _) => Some("start".to_string()),
-        (DaemonDesiredState::Paused, Some(DaemonState::Running)) => Some("pause".to_string()),
-        (DaemonDesiredState::Paused, _) => None,
-        (DaemonDesiredState::Stopped, Some(DaemonState::Running | DaemonState::Paused)) => {
-            Some("stop".to_string())
-        }
-        (DaemonDesiredState::Stopped, _) => None,
-    }
-}
-
 fn daemon_state_to_desired_state(state: DaemonState) -> DaemonDesiredState {
     match state {
         DaemonState::Running => DaemonDesiredState::Running,
@@ -161,20 +123,4 @@ fn daemon_state_to_desired_state(state: DaemonState) -> DaemonDesiredState {
             DaemonDesiredState::Stopped
         }
     }
-}
-
-fn execute_action(
-    ao: &AoDaemonClient,
-    project_root: &str,
-    action: Option<&str>,
-) -> Result<Option<DaemonCommandResult>> {
-    let result = match action {
-        Some("start") => Some(ao.start(project_root, &DaemonStartOptions::default())?),
-        Some("resume") => Some(ao.resume(project_root)?),
-        Some("pause") => Some(ao.pause(project_root)?),
-        Some("stop") => Some(ao.stop(project_root, None)?),
-        Some(_) | None => None,
-    };
-
-    Ok(result)
 }

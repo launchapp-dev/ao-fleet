@@ -45,9 +45,11 @@ What is still missing is a true fleet-level control plane:
 The repository currently exposes:
 
 - CLI commands for team, project, schedule, audit, daemon, and knowledge operations
+- CLI commands for host registration and project placement intent
 - a stdio MCP server for `fleet.*` tools
 - SQLite-backed fleet state
 - a company knowledge base with sources, documents, facts, and search
+- persisted daemon status and config snapshot import/export for founder bootstrap
 
 ## Quick Start
 
@@ -78,6 +80,23 @@ cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db project-create \
   --ao-project-root /Users/me/marketing-site \
   --default-branch main \
   --enabled
+```
+
+Register a founder-managed host and assign a project to it:
+
+```bash
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db host-create \
+  --slug founder-mac \
+  --name "Founder Mac" \
+  --address founder.local \
+  --platform macos \
+  --status healthy \
+  --capacity-slots 6
+
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db project-host-assign \
+  --project-id <PROJECT_ID> \
+  --host-id <HOST_ID> \
+  --assignment-source founder
 ```
 
 Create a business-hours schedule. Weekday numbers use `0 = Monday` and `6 = Sunday`:
@@ -137,6 +156,22 @@ Start the MCP server:
 cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db mcp-serve
 ```
 
+## Founder Bootstrap
+
+Phase 1 is meant for a single founder or a very small founding team running a company, not a large ops org.
+
+The practical bootstrap loop is:
+
+1. Initialize the fleet database.
+2. Create the company teams.
+3. Attach the repos or workspaces each team owns.
+4. Add schedules and company knowledge.
+5. Export a snapshot for backup or seed replication.
+6. Run `mcp-serve` as the long-lived control-plane process.
+7. Use `daemon-status --refresh` and `daemon-reconcile --apply` on a timer until remote host control exists in AO CLI.
+
+For a founder-run deployment, treat `ao-fleet` as a service with one persistent database path and one long-lived MCP endpoint. Use a service manager such as `systemd` or `launchd` to keep `mcp-serve` running, then schedule reconciliation separately until remote execution lands.
+
 ## Repository Map
 
 - `README.md`: product overview and operator entry point
@@ -181,9 +216,10 @@ The design target is "Brain as a product" rather than "a few shell scripts".
 - Config: YAML or TOML for declarative fleet config
 - MCP transport: stdio first, optional HTTP later
 - AO integration: spawn AO CLI and consume AO MCP rather than vendoring AO internals
+- Multi-host control: depends on AO CLI gaining remote execution and host-targeted daemon operations
 
 Rust is the right default because AO is already Rust and the operational parts here are process supervision, scheduling, IO, and durable state.
 
 ## Status
 
-The repo has a working core surface for registry, scheduling, daemon reconciliation, MCP, and knowledge operations. The next operator-facing layers live in `docs/operator-guide.md` and `docs/architecture.md`.
+The repo has a working core surface for registry, scheduling, daemon reconciliation, MCP, knowledge operations, daemon status, and config snapshots. The next operator-facing layers live in `docs/operator-guide.md` and `docs/architecture.md`.

@@ -6,6 +6,11 @@ use crate::cli::handlers::config_snapshot_import::config_snapshot_import;
 use crate::cli::handlers::daemon_reconcile::daemon_reconcile;
 use crate::cli::handlers::daemon_status::daemon_status;
 use crate::cli::handlers::db_init::db_init;
+use crate::cli::handlers::host_create::host_create;
+use crate::cli::handlers::host_delete::host_delete;
+use crate::cli::handlers::host_get::host_get;
+use crate::cli::handlers::host_list::host_list;
+use crate::cli::handlers::host_update::host_update;
 use crate::cli::handlers::knowledge_document_create::knowledge_document_create;
 use crate::cli::handlers::knowledge_document_list::knowledge_document_list;
 use crate::cli::handlers::knowledge_fact_create::knowledge_fact_create;
@@ -18,6 +23,9 @@ use crate::cli::handlers::mcp_serve::mcp_serve;
 use crate::cli::handlers::project_create::project_create;
 use crate::cli::handlers::project_delete::project_delete;
 use crate::cli::handlers::project_get::project_get;
+use crate::cli::handlers::project_host_assign::project_host_assign;
+use crate::cli::handlers::project_host_clear::project_host_clear;
+use crate::cli::handlers::project_host_list::project_host_list;
 use crate::cli::handlers::project_list::project_list;
 use crate::cli::handlers::project_update::project_update;
 use crate::cli::handlers::schedule_create::schedule_create;
@@ -42,6 +50,11 @@ pub fn route_command(root: RootCommand) -> Result<()> {
         CommandGroup::ConfigSnapshotImport(command) => {
             config_snapshot_import(&root.db_path, command)
         }
+        CommandGroup::HostCreate(command) => host_create(&root.db_path, command),
+        CommandGroup::HostGet(command) => host_get(&root.db_path, command),
+        CommandGroup::HostList(command) => host_list(&root.db_path, command),
+        CommandGroup::HostUpdate(command) => host_update(&root.db_path, command),
+        CommandGroup::HostDelete(command) => host_delete(&root.db_path, command),
         CommandGroup::TeamCreate(command) => team_create(&root.db_path, command),
         CommandGroup::TeamGet(command) => team_get(&root.db_path, command),
         CommandGroup::TeamList(command) => team_list(&root.db_path, command),
@@ -49,6 +62,9 @@ pub fn route_command(root: RootCommand) -> Result<()> {
         CommandGroup::TeamDelete(command) => team_delete(&root.db_path, command),
         CommandGroup::ProjectCreate(command) => project_create(&root.db_path, command),
         CommandGroup::ProjectGet(command) => project_get(&root.db_path, command),
+        CommandGroup::ProjectHostAssign(command) => project_host_assign(&root.db_path, command),
+        CommandGroup::ProjectHostClear(command) => project_host_clear(&root.db_path, command),
+        CommandGroup::ProjectHostList(command) => project_host_list(&root.db_path, command),
         CommandGroup::ProjectList(command) => project_list(&root.db_path, command),
         CommandGroup::ProjectUpdate(command) => project_update(&root.db_path, command),
         CommandGroup::ProjectDelete(command) => project_delete(&root.db_path, command),

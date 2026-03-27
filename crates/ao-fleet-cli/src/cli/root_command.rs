@@ -6,6 +6,11 @@ use crate::cli::handlers::config_snapshot_import_command::ConfigSnapshotImportCo
 use crate::cli::handlers::daemon_reconcile_command::DaemonReconcileCommand;
 use crate::cli::handlers::daemon_status_command::DaemonStatusCommand;
 use crate::cli::handlers::db_init_command::DbInitCommand;
+use crate::cli::handlers::host_create_command::HostCreateCommand;
+use crate::cli::handlers::host_delete_command::HostDeleteCommand;
+use crate::cli::handlers::host_get_command::HostGetCommand;
+use crate::cli::handlers::host_list_command::HostListCommand;
+use crate::cli::handlers::host_update_command::HostUpdateCommand;
 use crate::cli::handlers::knowledge_document_create_command::KnowledgeDocumentCreateCommand;
 use crate::cli::handlers::knowledge_document_list_command::KnowledgeDocumentListCommand;
 use crate::cli::handlers::knowledge_fact_create_command::KnowledgeFactCreateCommand;
@@ -18,6 +23,9 @@ use crate::cli::handlers::mcp_serve_command::McpServeCommand;
 use crate::cli::handlers::project_create_command::ProjectCreateCommand;
 use crate::cli::handlers::project_delete_command::ProjectDeleteCommand;
 use crate::cli::handlers::project_get_command::ProjectGetCommand;
+use crate::cli::handlers::project_host_assign_command::ProjectHostAssignCommand;
+use crate::cli::handlers::project_host_clear_command::ProjectHostClearCommand;
+use crate::cli::handlers::project_host_list_command::ProjectHostListCommand;
 use crate::cli::handlers::project_list_command::ProjectListCommand;
 use crate::cli::handlers::project_update_command::ProjectUpdateCommand;
 use crate::cli::handlers::schedule_create_command::ScheduleCreateCommand;
@@ -48,6 +56,11 @@ pub enum CommandGroup {
     AuditList(AuditListCommand),
     ConfigSnapshotExport(ConfigSnapshotExportCommand),
     ConfigSnapshotImport(ConfigSnapshotImportCommand),
+    HostCreate(HostCreateCommand),
+    HostGet(HostGetCommand),
+    HostList(HostListCommand),
+    HostUpdate(HostUpdateCommand),
+    HostDelete(HostDeleteCommand),
     TeamCreate(TeamCreateCommand),
     TeamGet(TeamGetCommand),
     TeamList(TeamListCommand),
@@ -55,6 +68,9 @@ pub enum CommandGroup {
     TeamDelete(TeamDeleteCommand),
     ProjectCreate(ProjectCreateCommand),
     ProjectGet(ProjectGetCommand),
+    ProjectHostAssign(ProjectHostAssignCommand),
+    ProjectHostClear(ProjectHostClearCommand),
+    ProjectHostList(ProjectHostListCommand),
     ProjectList(ProjectListCommand),
     ProjectUpdate(ProjectUpdateCommand),
     ProjectDelete(ProjectDeleteCommand),

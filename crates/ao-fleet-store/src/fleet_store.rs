@@ -4,9 +4,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use ao_fleet_core::{
-    AuditEvent, DaemonDesiredState, KnowledgeDocument, KnowledgeFact, KnowledgeScope,
-    KnowledgeSource, NewAuditEvent, NewProject, NewSchedule, NewTeam, ObservedDaemonStatus,
-    Project, Schedule, SchedulePolicyKind, Team, WeekdayWindow,
+    AuditEvent, DaemonDesiredState, Host, KnowledgeDocument, KnowledgeFact, KnowledgeScope,
+    KnowledgeSource, NewAuditEvent, NewHost, NewProject, NewSchedule, NewTeam,
+    ObservedDaemonStatus, Project, ProjectHostPlacement, Schedule, SchedulePolicyKind, Team,
+    WeekdayWindow,
 };
 use ao_fleet_scheduler::schedule_evaluator::ScheduleEvaluator;
 use chrono::{DateTime, Utc};
@@ -33,6 +34,7 @@ const MIGRATION_SQL: &[&str] = &[
     include_str!("../sql/migrations/003_create_audit_events.sql"),
     include_str!("../sql/migrations/004_create_knowledge_tables.sql"),
     include_str!("../sql/migrations/005_create_observed_daemon_statuses.sql"),
+    include_str!("../sql/migrations/006_create_hosts_and_placements.sql"),
 ];
 
 #[derive(Debug, Clone)]
@@ -87,6 +89,224 @@ impl FleetStore {
         let limit = limit.unwrap_or(100);
         let mut stmt = conn.prepare(include_str!("../sql/audit_event/list.sql"))?;
         let rows = stmt.query_map(params![team_id, limit as i64], audit_event_from_row)?;
+        collect_rows(rows)
+    }
+
+    pub fn create_host(&self, input: NewHost) -> Result<Host, StoreError> {
+        input.validate()?;
+        let now = Utc::now();
+        let host = Host {
+            id: new_id("host"),
+            slug: input.slug,
+            name: input.name,
+            address: input.address,
+            platform: input.platform,
+            status: input.status,
+            capacity_slots: input.capacity_slots,
+            created_at: now,
+            updated_at: now,
+        };
+
+        let mut conn = self.connection()?;
+        let tx = conn.transaction()?;
+        let result = tx.execute(
+            include_str!("../sql/host/insert.sql"),
+            params![
+                host.id,
+                host.slug,
+                host.name,
+                host.address,
+                host.platform,
+                host.status,
+                host.capacity_slots,
+                host.created_at.to_rfc3339(),
+                host.updated_at.to_rfc3339(),
+            ],
+        );
+
+        match result {
+            Ok(_) => {
+                record_audit_event(
+                    &tx,
+                    NewAuditEvent {
+                        team_id: None,
+                        entity_type: "host".to_string(),
+                        entity_id: host.id.clone(),
+                        action: "created".to_string(),
+                        actor_type: "system".to_string(),
+                        actor_id: None,
+                        summary: format!("Created host {}", host.slug),
+                        details: serde_json::json!({
+                            "slug": host.slug,
+                            "address": host.address,
+                            "platform": host.platform,
+                            "status": host.status,
+                            "capacity_slots": host.capacity_slots,
+                        }),
+                    },
+                )?;
+                tx.commit()?;
+                Ok(host)
+            }
+            Err(error) if is_unique_constraint(&error) => {
+                Err(StoreError::already_exists("host", host.slug))
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    pub fn list_hosts(&self) -> Result<Vec<Host>, StoreError> {
+        let conn = self.connection()?;
+        let mut stmt = conn.prepare(include_str!("../sql/host/list.sql"))?;
+        let rows = stmt.query_map([], host_from_row)?;
+        collect_rows(rows)
+    }
+
+    pub fn get_host(&self, id: &str) -> Result<Option<Host>, StoreError> {
+        let conn = self.connection()?;
+        conn.query_row(include_str!("../sql/host/get.sql"), params![id], host_from_row)
+            .optional()
+            .map_err(Into::into)
+    }
+
+    pub fn update_host(&self, host: Host) -> Result<Host, StoreError> {
+        validate_host(&host)?;
+        let mut conn = self.connection()?;
+        let tx = conn.transaction()?;
+        let changed = tx.execute(
+            include_str!("../sql/host/update.sql"),
+            params![
+                host.slug,
+                host.name,
+                host.address,
+                host.platform,
+                host.status,
+                host.capacity_slots,
+                host.updated_at.to_rfc3339(),
+                host.id,
+            ],
+        )?;
+
+        if changed == 0 {
+            return Err(StoreError::not_found("host", host.id));
+        }
+
+        record_audit_event(
+            &tx,
+            NewAuditEvent {
+                team_id: None,
+                entity_type: "host".to_string(),
+                entity_id: host.id.clone(),
+                action: "updated".to_string(),
+                actor_type: "system".to_string(),
+                actor_id: None,
+                summary: format!("Updated host {}", host.slug),
+                details: serde_json::json!({
+                    "slug": host.slug,
+                    "address": host.address,
+                    "platform": host.platform,
+                    "status": host.status,
+                    "capacity_slots": host.capacity_slots,
+                }),
+            },
+        )?;
+        tx.commit()?;
+        Ok(host)
+    }
+
+    pub fn delete_host(&self, id: &str) -> Result<bool, StoreError> {
+        let mut conn = self.connection()?;
+        let tx = conn.transaction()?;
+        let changed = tx.execute(include_str!("../sql/host/delete.sql"), params![id])?;
+        if changed > 0 {
+            record_audit_event(
+                &tx,
+                NewAuditEvent {
+                    team_id: None,
+                    entity_type: "host".to_string(),
+                    entity_id: id.to_string(),
+                    action: "deleted".to_string(),
+                    actor_type: "system".to_string(),
+                    actor_id: None,
+                    summary: format!("Deleted host {id}"),
+                    details: serde_json::json!({}),
+                },
+            )?;
+            tx.commit()?;
+        }
+        Ok(changed > 0)
+    }
+
+    pub fn upsert_project_host_placement(
+        &self,
+        placement: ProjectHostPlacement,
+    ) -> Result<ProjectHostPlacement, StoreError> {
+        validate_project_host_placement(&placement)?;
+        let mut conn = self.connection()?;
+        let tx = conn.transaction()?;
+        tx.execute(
+            include_str!("../sql/project_host_placement/upsert.sql"),
+            params![
+                placement.project_id,
+                placement.host_id,
+                placement.assignment_source,
+                placement.assigned_at.to_rfc3339(),
+            ],
+        )?;
+        record_audit_event(
+            &tx,
+            NewAuditEvent {
+                team_id: None,
+                entity_type: "project_host_placement".to_string(),
+                entity_id: placement.project_id.clone(),
+                action: "upserted".to_string(),
+                actor_type: "system".to_string(),
+                actor_id: None,
+                summary: format!(
+                    "Assigned project {} to host {}",
+                    placement.project_id, placement.host_id
+                ),
+                details: serde_json::json!({
+                    "project_id": placement.project_id,
+                    "host_id": placement.host_id,
+                    "assignment_source": placement.assignment_source,
+                }),
+            },
+        )?;
+        tx.commit()?;
+        Ok(placement)
+    }
+
+    pub fn clear_project_host_placement(&self, project_id: &str) -> Result<bool, StoreError> {
+        let mut conn = self.connection()?;
+        let tx = conn.transaction()?;
+        let changed = tx.execute(
+            include_str!("../sql/project_host_placement/delete.sql"),
+            params![project_id],
+        )?;
+        if changed > 0 {
+            record_audit_event(
+                &tx,
+                NewAuditEvent {
+                    team_id: None,
+                    entity_type: "project_host_placement".to_string(),
+                    entity_id: project_id.to_string(),
+                    action: "cleared".to_string(),
+                    actor_type: "system".to_string(),
+                    actor_id: None,
+                    summary: format!("Cleared host placement for project {project_id}"),
+                    details: serde_json::json!({ "project_id": project_id }),
+                },
+            )?;
+            tx.commit()?;
+        }
+        Ok(changed > 0)
+    }
+
+    pub fn list_project_host_placements(&self) -> Result<Vec<ProjectHostPlacement>, StoreError> {
+        let conn = self.connection()?;
+        let mut stmt = conn.prepare(include_str!("../sql/project_host_placement/list.sql"))?;
+        let rows = stmt.query_map([], project_host_placement_from_row)?;
         collect_rows(rows)
     }
 
@@ -1088,6 +1308,20 @@ fn observed_state_by_team(
     states
 }
 
+fn host_from_row(row: &Row<'_>) -> Result<Host, rusqlite::Error> {
+    Ok(Host {
+        id: row.get(0)?,
+        slug: row.get(1)?,
+        name: row.get(2)?,
+        address: row.get(3)?,
+        platform: row.get(4)?,
+        status: row.get(5)?,
+        capacity_slots: row.get(6)?,
+        created_at: parse_datetime_sql(7, row.get::<_, String>(7)?)?,
+        updated_at: parse_datetime_sql(8, row.get::<_, String>(8)?)?,
+    })
+}
+
 fn audit_event_from_row(row: &Row<'_>) -> Result<AuditEvent, rusqlite::Error> {
     let details_json: String = row.get(8)?;
     let details: serde_json::Value = serde_json::from_str(&details_json).map_err(|error| {
@@ -1151,6 +1385,15 @@ fn fleet_daemon_status_from_row(row: &Row<'_>) -> Result<FleetDaemonStatus, rusq
     })
 }
 
+fn project_host_placement_from_row(row: &Row<'_>) -> Result<ProjectHostPlacement, rusqlite::Error> {
+    Ok(ProjectHostPlacement {
+        project_id: row.get(0)?,
+        host_id: row.get(1)?,
+        assignment_source: row.get(2)?,
+        assigned_at: parse_datetime_sql(3, row.get::<_, String>(3)?)?,
+    })
+}
+
 fn policy_kind_to_text(policy_kind: SchedulePolicyKind) -> &'static str {
     match policy_kind {
         SchedulePolicyKind::AlwaysOn => "always_on",
@@ -1201,6 +1444,35 @@ fn validate_project(project: &Project) -> Result<(), StoreError> {
         || project.default_branch.trim().is_empty()
     {
         return Err(StoreError::validation("project fields cannot be empty"));
+    }
+
+    Ok(())
+}
+
+fn validate_host(host: &Host) -> Result<(), StoreError> {
+    if host.id.trim().is_empty()
+        || host.slug.trim().is_empty()
+        || host.name.trim().is_empty()
+        || host.address.trim().is_empty()
+        || host.platform.trim().is_empty()
+        || host.status.trim().is_empty()
+    {
+        return Err(StoreError::validation("host fields cannot be empty"));
+    }
+
+    if host.capacity_slots < 0 {
+        return Err(StoreError::validation("host capacity must be non-negative"));
+    }
+
+    Ok(())
+}
+
+fn validate_project_host_placement(placement: &ProjectHostPlacement) -> Result<(), StoreError> {
+    if placement.project_id.trim().is_empty()
+        || placement.host_id.trim().is_empty()
+        || placement.assignment_source.trim().is_empty()
+    {
+        return Err(StoreError::validation("project host placement fields cannot be empty"));
     }
 
     Ok(())

@@ -56,6 +56,21 @@ AO can keep doing:
 - supervising agent subprocesses
 - managing task and requirement state
 
+## AO-CLI Dependency For Multi-Host
+
+Phase 1 can model host placement intent inside `ao-fleet`, but actual multi-host daemon control is blocked on AO CLI capabilities that do not exist in the current repo surface.
+
+`ao-cli` needs to provide:
+
+- remote daemon lifecycle operations that can target a specific host or agent
+- machine-readable status and command results for start, stop, pause, resume, and health checks
+- a secure transport or agent mode for executing AO commands off-box
+- explicit host enrollment or identity so fleet assignments are stable
+- deterministic error codes and structured payloads for reconciliation and recovery
+- project-root resolution that works against remote filesystems or mapped workspaces
+
+Until those exist, `ao-fleet` should treat host placement as intent and keep execution local to known AO roots.
+
 ## Recommended System Model
 
 ```text
@@ -112,6 +127,24 @@ The current CLI surface already reflects that shape:
 
 The MCP surface mirrors it with `fleet.knowledge.*` tools.
 
+## Dashboard Contract
+
+`ao-dashboard` should read from `ao-fleet`, not from repo-local AO state directly.
+
+Current read models:
+
+- `fleet.overview` for company inventory plus desired-vs-observed reconcile preview
+- `fleet.daemon.status` for persisted daemon status by project and team
+- `fleet.knowledge.source.list`, `fleet.knowledge.document.list`, `fleet.knowledge.fact.list`, and `fleet.knowledge.search` for company memory
+
+Phase 1 additions to expose next:
+
+- host registry and host health
+- founder overrides and policy previews
+- incident and event history
+- workflow runs and company-level automation outputs
+- fleet snapshot export or seeded config summaries for bootstrap flows
+
 ## Scheduling Model
 
 The most important product feature is not cron alone. It is desired operating windows.
@@ -154,6 +187,20 @@ The MCP surface should be split into:
 - workflows: `fleet.workflow.run`, `fleet.workflow.list`
 - observability: `fleet.events.tail`, `fleet.audit.list`, `fleet.health.overview`
 - knowledge: `fleet.knowledge.source.list`, `fleet.knowledge.source.upsert`, `fleet.knowledge.document.list`, `fleet.knowledge.document.create`, `fleet.knowledge.fact.list`, `fleet.knowledge.fact.create`, `fleet.knowledge.search`
+
+In the current codebase, the implemented MCP read surface is narrower:
+
+- `fleet.overview`
+- `fleet.daemon.status`
+- `fleet.knowledge.source.list`
+- `fleet.knowledge.source.upsert`
+- `fleet.knowledge.document.list`
+- `fleet.knowledge.document.create`
+- `fleet.knowledge.fact.list`
+- `fleet.knowledge.fact.create`
+- `fleet.knowledge.search`
+
+The remaining groups are the Phase 1 expansion path.
 
 ## Embedded AO Strategy
 
