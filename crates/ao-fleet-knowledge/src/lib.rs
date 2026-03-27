@@ -1,0 +1,23 @@
+pub mod errors;
+pub mod models;
+pub mod services;
+
+pub use ao_fleet_core::KnowledgeDocument;
+pub use ao_fleet_core::KnowledgeDocumentKind;
+pub use ao_fleet_core::KnowledgeFact;
+pub use ao_fleet_core::KnowledgeFactKind;
+pub use ao_fleet_core::KnowledgeScope;
+pub use ao_fleet_core::KnowledgeSource;
+pub use ao_fleet_core::KnowledgeSourceKind;
+pub use ao_fleet_core::KnowledgeSyncState;
+pub use errors::knowledge_error::KnowledgeError;
+pub use models::knowledge_base_manifest::KnowledgeBaseManifest;
+pub use models::knowledge_collection::KnowledgeCollection;
+pub use models::knowledge_ingestion_job::KnowledgeIngestionJob;
+pub use models::knowledge_ingestion_job::KnowledgeIngestionJobStatus;
+pub use models::knowledge_ingestion_report::KnowledgeIngestionReport;
+pub use models::knowledge_query::KnowledgeQuery;
+pub use services::knowledge_base::KnowledgeBase;
+pub use services::knowledge_catalog::KnowledgeCatalog;
+pub use services::knowledge_ingestion::KnowledgeIngestionService;
+pub use services::knowledge_query_engine::KnowledgeQueryEngine;

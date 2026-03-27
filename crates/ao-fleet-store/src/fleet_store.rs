@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -6,11 +7,20 @@ use ao_fleet_core::{
     AuditEvent, DaemonDesiredState, NewAuditEvent, NewProject, NewSchedule, NewTeam, Project,
     Schedule, SchedulePolicyKind, Team, WeekdayWindow,
 };
+use ao_fleet_scheduler::schedule_evaluator::ScheduleEvaluator;
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Row, params, types::Type};
 use uuid::Uuid;
 
 use crate::errors::store_error::StoreError;
+use crate::models::fleet_overview::FleetOverview;
+use crate::models::fleet_overview_query::FleetOverviewQuery;
+use crate::models::fleet_overview_summary::FleetOverviewSummary;
+use crate::models::fleet_reconcile_action::FleetReconcileAction;
+use crate::models::fleet_reconcile_preview::FleetReconcilePreview;
+use crate::models::fleet_reconcile_preview_item::FleetReconcilePreviewItem;
+use crate::models::fleet_team_overview::FleetTeamOverview;
+use crate::models::fleet_team_summary::FleetTeamSummary;
 
 const MIGRATION_SQL: &[&str] = &[
     include_str!("../sql/migrations/001_enable_foreign_keys.sql"),
@@ -517,6 +527,102 @@ impl FleetStore {
         Ok(changed > 0)
     }
 
+    pub fn fleet_overview(&self, query: FleetOverviewQuery) -> Result<FleetOverview, StoreError> {
+        let evaluated_at = query.at.unwrap_or_else(Utc::now);
+        let team_filter = query.team_id.as_deref();
+
+        let teams = self
+            .list_teams()?
+            .into_iter()
+            .filter(|team| team_filter.map_or(true, |team_id| team.id == team_id))
+            .collect::<Vec<_>>();
+        let projects = self.list_projects(team_filter)?;
+        let schedules = self.list_schedules(team_filter)?;
+
+        let mut projects_by_team: BTreeMap<String, Vec<Project>> = BTreeMap::new();
+        for project in projects {
+            projects_by_team.entry(project.team_id.clone()).or_default().push(project);
+        }
+
+        let mut schedules_by_team: BTreeMap<String, Vec<Schedule>> = BTreeMap::new();
+        for schedule in schedules {
+            schedules_by_team.entry(schedule.team_id.clone()).or_default().push(schedule);
+        }
+
+        let mut team_overviews = Vec::with_capacity(teams.len());
+        let mut preview_items = Vec::with_capacity(teams.len());
+        let mut team_count = 0_usize;
+        let mut project_count = 0_usize;
+        let mut schedule_count = 0_usize;
+        let mut enabled_project_count = 0_usize;
+        let mut enabled_schedule_count = 0_usize;
+
+        for team in teams {
+            team_count += 1;
+            let team_projects = projects_by_team.remove(&team.id).unwrap_or_default();
+            let team_schedules = schedules_by_team.remove(&team.id).unwrap_or_default();
+            let backlog_count = query.backlog_by_team.get(&team.id).copied().unwrap_or(0);
+            let desired_state =
+                reconcile_desired_state(&team_schedules, evaluated_at, backlog_count);
+            let observed_state = query
+                .observed_state_by_team
+                .get(&team.id)
+                .copied()
+                .unwrap_or_else(|| infer_observed_state(&team_projects));
+
+            let reconcile_preview = FleetReconcilePreviewItem {
+                team_id: team.id.clone(),
+                team_slug: team.slug.clone(),
+                desired_state,
+                observed_state,
+                action: reconcile_action(desired_state, observed_state),
+                backlog_count,
+                schedule_ids: team_schedules.iter().map(|schedule| schedule.id.clone()).collect(),
+            };
+
+            let summary = FleetTeamSummary {
+                project_count: team_projects.len(),
+                enabled_project_count: team_projects
+                    .iter()
+                    .filter(|project| project.enabled)
+                    .count(),
+                schedule_count: team_schedules.len(),
+                enabled_schedule_count: team_schedules
+                    .iter()
+                    .filter(|schedule| schedule.enabled)
+                    .count(),
+                backlog_count,
+            };
+
+            project_count += summary.project_count;
+            schedule_count += summary.schedule_count;
+            enabled_project_count += summary.enabled_project_count;
+            enabled_schedule_count += summary.enabled_schedule_count;
+
+            preview_items.push(reconcile_preview.clone());
+            team_overviews.push(FleetTeamOverview {
+                team,
+                summary,
+                projects: team_projects,
+                schedules: team_schedules,
+                reconcile_preview,
+            });
+        }
+
+        Ok(FleetOverview {
+            evaluated_at: evaluated_at.clone(),
+            summary: FleetOverviewSummary {
+                team_count,
+                project_count,
+                schedule_count,
+                enabled_project_count,
+                enabled_schedule_count,
+            },
+            teams: team_overviews,
+            preview: FleetReconcilePreview { evaluated_at, items: preview_items },
+        })
+    }
+
     fn connection(&self) -> Result<std::sync::MutexGuard<'_, Connection>, StoreError> {
         self.conn.lock().map_err(|_| StoreError::validation("database connection lock poisoned"))
     }
@@ -556,6 +662,67 @@ fn parse_datetime_sql(column: usize, value: String) -> rusqlite::Result<DateTime
 
 fn bool_from_i64(value: i64) -> bool {
     value != 0
+}
+
+fn reconcile_desired_state(
+    schedules: &[Schedule],
+    evaluated_at: DateTime<Utc>,
+    backlog_count: usize,
+) -> DaemonDesiredState {
+    schedules.iter().fold(DaemonDesiredState::Stopped, |current, schedule| {
+        let desired_state = ScheduleEvaluator::evaluate(schedule, evaluated_at, backlog_count);
+        merge_desired_state(current, desired_state)
+    })
+}
+
+fn merge_desired_state(
+    current: DaemonDesiredState,
+    candidate: DaemonDesiredState,
+) -> DaemonDesiredState {
+    match (current, candidate) {
+        (DaemonDesiredState::Running, _) | (_, DaemonDesiredState::Running) => {
+            DaemonDesiredState::Running
+        }
+        (DaemonDesiredState::Paused, _) | (_, DaemonDesiredState::Paused) => {
+            DaemonDesiredState::Paused
+        }
+        _ => DaemonDesiredState::Stopped,
+    }
+}
+
+fn infer_observed_state(projects: &[Project]) -> DaemonDesiredState {
+    if projects.is_empty() {
+        return DaemonDesiredState::Stopped;
+    }
+
+    let any_enabled = projects.iter().any(|project| project.enabled);
+    let any_disabled = projects.iter().any(|project| !project.enabled);
+
+    match (any_enabled, any_disabled) {
+        (true, false) => DaemonDesiredState::Running,
+        (false, true) => DaemonDesiredState::Stopped,
+        (true, true) => DaemonDesiredState::Paused,
+        (false, false) => DaemonDesiredState::Stopped,
+    }
+}
+
+fn reconcile_action(
+    desired_state: DaemonDesiredState,
+    observed_state: DaemonDesiredState,
+) -> FleetReconcileAction {
+    match (desired_state, observed_state) {
+        (DaemonDesiredState::Running, DaemonDesiredState::Running)
+        | (DaemonDesiredState::Paused, DaemonDesiredState::Paused)
+        | (DaemonDesiredState::Stopped, DaemonDesiredState::Stopped) => FleetReconcileAction::Keep,
+        (DaemonDesiredState::Running, DaemonDesiredState::Paused) => FleetReconcileAction::Resume,
+        (DaemonDesiredState::Running, DaemonDesiredState::Stopped) => FleetReconcileAction::Start,
+        (DaemonDesiredState::Paused, DaemonDesiredState::Running) => FleetReconcileAction::Pause,
+        (DaemonDesiredState::Paused, DaemonDesiredState::Stopped) => {
+            FleetReconcileAction::StartPaused
+        }
+        (DaemonDesiredState::Stopped, DaemonDesiredState::Running)
+        | (DaemonDesiredState::Stopped, DaemonDesiredState::Paused) => FleetReconcileAction::Stop,
+    }
 }
 
 fn audit_event_from_row(row: &Row<'_>) -> Result<AuditEvent, rusqlite::Error> {
@@ -786,7 +953,7 @@ mod tests {
     use ao_fleet_core::{
         NewAuditEvent, NewProject, NewSchedule, NewTeam, SchedulePolicyKind, WeekdayWindow,
     };
-    use chrono::Utc;
+    use chrono::{TimeZone, Utc};
     use serde_json::json;
 
     #[test]
@@ -922,5 +1089,89 @@ mod tests {
             store.list_audit_events(Some("team-123"), None).expect("audit events listed").len(),
             1
         );
+    }
+
+    #[test]
+    fn fleet_overview_summarizes_inventory_and_preview() {
+        let store = FleetStore::open_in_memory().expect("store opens");
+
+        let team = store
+            .create_team(NewTeam {
+                slug: "marketing".to_string(),
+                name: "Marketing".to_string(),
+                mission: "Own campaigns and launches".to_string(),
+                ownership: "growth".to_string(),
+                business_priority: 10,
+            })
+            .expect("team created");
+
+        store
+            .create_project(NewProject {
+                team_id: team.id.clone(),
+                slug: "launch-site".to_string(),
+                root_path: "/tmp/launch-site".to_string(),
+                ao_project_root: "/tmp/launch-site".to_string(),
+                default_branch: "main".to_string(),
+                enabled: true,
+            })
+            .expect("first project created");
+
+        store
+            .create_project(NewProject {
+                team_id: team.id.clone(),
+                slug: "campaigns".to_string(),
+                root_path: "/tmp/campaigns".to_string(),
+                ao_project_root: "/tmp/campaigns".to_string(),
+                default_branch: "main".to_string(),
+                enabled: false,
+            })
+            .expect("second project created");
+
+        let schedule = store
+            .create_schedule(NewSchedule {
+                team_id: team.id.clone(),
+                timezone: "UTC".to_string(),
+                policy_kind: SchedulePolicyKind::BusinessHours,
+                windows: vec![WeekdayWindow {
+                    weekdays: vec![0, 1, 2, 3, 4],
+                    start_hour: 9,
+                    end_hour: 17,
+                }],
+                enabled: true,
+            })
+            .expect("schedule created");
+
+        let mut backlog_by_team = std::collections::BTreeMap::new();
+        backlog_by_team.insert(team.id.clone(), 3);
+
+        let overview = store
+            .fleet_overview(FleetOverviewQuery {
+                team_id: Some(team.id.clone()),
+                at: Some(Utc.with_ymd_and_hms(2025, 3, 3, 10, 0, 0).unwrap()),
+                backlog_by_team,
+                observed_state_by_team: std::collections::BTreeMap::new(),
+            })
+            .expect("overview built");
+
+        assert_eq!(overview.summary.team_count, 1);
+        assert_eq!(overview.summary.project_count, 2);
+        assert_eq!(overview.summary.schedule_count, 1);
+        assert_eq!(overview.summary.enabled_project_count, 1);
+        assert_eq!(overview.summary.enabled_schedule_count, 1);
+        assert_eq!(overview.teams.len(), 1);
+
+        let team_overview = &overview.teams[0];
+        assert_eq!(team_overview.team.id, team.id);
+        assert_eq!(team_overview.summary.project_count, 2);
+        assert_eq!(team_overview.summary.enabled_project_count, 1);
+        assert_eq!(team_overview.summary.backlog_count, 3);
+        assert_eq!(team_overview.reconcile_preview.desired_state, DaemonDesiredState::Running);
+        assert_eq!(team_overview.reconcile_preview.observed_state, DaemonDesiredState::Paused);
+        assert_eq!(team_overview.reconcile_preview.action, FleetReconcileAction::Resume);
+        assert_eq!(team_overview.reconcile_preview.schedule_ids, vec![schedule.id]);
+
+        assert_eq!(overview.preview.items.len(), 1);
+        assert_eq!(overview.preview.items[0].team_id, team.id);
+        assert_eq!(overview.preview.items[0].action, FleetReconcileAction::Resume);
     }
 }

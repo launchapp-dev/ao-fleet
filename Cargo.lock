@@ -80,10 +80,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
+name = "ao-fleet-ao"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "ao-fleet-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ao-fleet-ao",
  "ao-fleet-core",
  "ao-fleet-mcp",
  "ao-fleet-scheduler",
@@ -106,12 +119,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "ao-fleet-knowledge"
+version = "0.1.0"
+dependencies = [
+ "ao-fleet-core",
+ "chrono",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "ao-fleet-mcp"
 version = "0.1.0"
 dependencies = [
  "ao-fleet-core",
+ "ao-fleet-scheduler",
+ "ao-fleet-store",
+ "chrono",
  "serde",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -131,6 +160,7 @@ name = "ao-fleet-store"
 version = "0.1.0"
 dependencies = [
  "ao-fleet-core",
+ "ao-fleet-scheduler",
  "chrono",
  "rusqlite",
  "serde",

@@ -27,6 +27,7 @@ impl FleetMcpSurface {
                 SchedulePolicyKind::BurstOnBacklog,
             ],
             tools: vec![
+                overview_tool(),
                 team_list_tool(),
                 team_create_tool(),
                 project_list_tool(),
@@ -41,6 +42,43 @@ impl FleetMcpSurface {
     pub fn to_pretty_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
     }
+
+    pub fn tool(&self, name: &str) -> Option<&McpToolDescriptor> {
+        self.tools.iter().find(|tool| tool.name == name)
+    }
+}
+
+fn overview_tool() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "fleet.overview".to_string(),
+        description: "Summarize fleet inventory and reconcile preview data".to_string(),
+        input_schema: schema_with_properties(
+            "Summarize inventory plus desired-vs-observed reconcile preview".to_string(),
+            vec![
+                string_property("team_id", "Optional team filter", false, "team_marketing"),
+                string_property(
+                    "at",
+                    "Optional RFC 3339 timestamp used for schedule evaluation",
+                    false,
+                    "2025-03-03T10:00:00Z",
+                ),
+                object_property(
+                    "backlog_by_team",
+                    "Optional backlog counts keyed by team id",
+                    false,
+                    serde_json::json!({ "team_marketing": 3 }),
+                ),
+                object_property(
+                    "observed_state_by_team",
+                    "Optional observed daemon states keyed by team id",
+                    false,
+                    serde_json::json!({ "team_marketing": "running" }),
+                ),
+            ],
+            Vec::new(),
+        ),
+        tags: vec!["inventory".to_string(), "overview".to_string(), "reconcile".to_string()],
+    }
 }
 
 impl Default for FleetMcpSurface {
@@ -53,7 +91,7 @@ fn team_list_tool() -> McpToolDescriptor {
     McpToolDescriptor {
         name: "fleet.team.list".to_string(),
         description: "List fleet teams and their ownership metadata".to_string(),
-        input_schema: empty_schema("List teams with optional status filters".to_string()),
+        input_schema: empty_schema("List teams".to_string()),
         tags: vec!["inventory".to_string(), "team".to_string()],
     }
 }
@@ -194,12 +232,21 @@ fn schedule_create_tool() -> McpToolDescriptor {
                     ],
                     "business_hours",
                 ),
+                array_property(
+                    "windows",
+                    "Schedule windows encoded as an array of weekday/hour objects",
+                    true,
+                    serde_json::json!([
+                        { "weekdays": [0, 1, 2, 3, 4], "start_hour": 9, "end_hour": 17 }
+                    ]),
+                ),
                 boolean_property("enabled", "Whether the schedule is active", true, true),
             ],
             vec![
                 "team_id".to_string(),
                 "timezone".to_string(),
                 "policy_kind".to_string(),
+                "windows".to_string(),
                 "enabled".to_string(),
             ],
         ),
@@ -307,6 +354,38 @@ fn enum_property(
     }
 }
 
+fn array_property(
+    name: &str,
+    description: &str,
+    required: bool,
+    example: serde_json::Value,
+) -> McpToolProperty {
+    McpToolProperty {
+        name: name.to_string(),
+        kind: McpToolValueKind::Array,
+        description: description.to_string(),
+        required,
+        enum_values: Vec::new(),
+        example: Some(example),
+    }
+}
+
+fn object_property(
+    name: &str,
+    description: &str,
+    required: bool,
+    example: serde_json::Value,
+) -> McpToolProperty {
+    McpToolProperty {
+        name: name.to_string(),
+        kind: McpToolValueKind::Object,
+        description: description.to_string(),
+        required,
+        enum_values: Vec::new(),
+        example: Some(example),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::FleetMcpSurface;
@@ -319,6 +398,7 @@ mod tests {
         assert_eq!(
             names,
             vec![
+                "fleet.overview",
                 "fleet.team.list",
                 "fleet.team.create",
                 "fleet.project.list",
@@ -328,5 +408,13 @@ mod tests {
                 "fleet.daemon.reconcile",
             ]
         );
+    }
+
+    #[test]
+    fn tool_lookup_finds_tools() {
+        let surface = FleetMcpSurface::new();
+
+        assert!(surface.tool("fleet.team.create").is_some());
+        assert!(surface.tool("fleet.missing").is_none());
     }
 }

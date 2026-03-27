@@ -1,5 +1,13 @@
 pub mod audit_event;
 pub mod daemon_desired_state;
+pub mod knowledge_document;
+pub mod knowledge_document_kind;
+pub mod knowledge_fact;
+pub mod knowledge_fact_kind;
+pub mod knowledge_scope;
+pub mod knowledge_source;
+pub mod knowledge_source_kind;
+pub mod knowledge_sync_state;
 pub mod new_audit_event;
 pub mod new_project;
 pub mod new_schedule;

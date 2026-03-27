@@ -1,0 +1,10 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FleetOverviewSummary {
+    pub team_count: usize,
+    pub project_count: usize,
+    pub schedule_count: usize,
+    pub enabled_project_count: usize,
+    pub enabled_schedule_count: usize,
+}

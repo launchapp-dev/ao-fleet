@@ -1,14 +1,25 @@
 use clap::{Parser, Subcommand};
 
+use crate::cli::handlers::audit_list_command::AuditListCommand;
 use crate::cli::handlers::daemon_reconcile_command::DaemonReconcileCommand;
 use crate::cli::handlers::db_init_command::DbInitCommand;
 use crate::cli::handlers::mcp_list_command::McpListCommand;
+use crate::cli::handlers::mcp_serve_command::McpServeCommand;
 use crate::cli::handlers::project_create_command::ProjectCreateCommand;
+use crate::cli::handlers::project_delete_command::ProjectDeleteCommand;
+use crate::cli::handlers::project_get_command::ProjectGetCommand;
 use crate::cli::handlers::project_list_command::ProjectListCommand;
+use crate::cli::handlers::project_update_command::ProjectUpdateCommand;
 use crate::cli::handlers::schedule_create_command::ScheduleCreateCommand;
+use crate::cli::handlers::schedule_delete_command::ScheduleDeleteCommand;
+use crate::cli::handlers::schedule_get_command::ScheduleGetCommand;
 use crate::cli::handlers::schedule_list_command::ScheduleListCommand;
+use crate::cli::handlers::schedule_update_command::ScheduleUpdateCommand;
 use crate::cli::handlers::team_create_command::TeamCreateCommand;
+use crate::cli::handlers::team_delete_command::TeamDeleteCommand;
+use crate::cli::handlers::team_get_command::TeamGetCommand;
 use crate::cli::handlers::team_list_command::TeamListCommand;
+use crate::cli::handlers::team_update_command::TeamUpdateCommand;
 
 #[derive(Debug, Parser)]
 #[command(name = "ao-fleet")]
@@ -24,12 +35,23 @@ pub struct RootCommand {
 #[derive(Debug, Subcommand)]
 pub enum CommandGroup {
     DbInit(DbInitCommand),
+    AuditList(AuditListCommand),
     TeamCreate(TeamCreateCommand),
+    TeamGet(TeamGetCommand),
     TeamList(TeamListCommand),
+    TeamUpdate(TeamUpdateCommand),
+    TeamDelete(TeamDeleteCommand),
     ProjectCreate(ProjectCreateCommand),
+    ProjectGet(ProjectGetCommand),
     ProjectList(ProjectListCommand),
+    ProjectUpdate(ProjectUpdateCommand),
+    ProjectDelete(ProjectDeleteCommand),
     ScheduleCreate(ScheduleCreateCommand),
+    ScheduleGet(ScheduleGetCommand),
     ScheduleList(ScheduleListCommand),
+    ScheduleUpdate(ScheduleUpdateCommand),
+    ScheduleDelete(ScheduleDeleteCommand),
     DaemonReconcile(DaemonReconcileCommand),
     McpList(McpListCommand),
+    McpServe(McpServeCommand),
 }
