@@ -56,20 +56,22 @@ AO can keep doing:
 - supervising agent subprocesses
 - managing task and requirement state
 
-## AO-CLI Dependency For Multi-Host
+## AO-CLI Surface For Multi-Host
 
-Phase 1 can model host placement intent inside `ao-fleet`, but actual multi-host daemon control is blocked on AO CLI capabilities that do not exist in the current repo surface.
+AO CLI already provides the daemon web API and MCP surface that `ao-fleet` can build on for remote control.
 
-`ao-cli` needs to provide:
+That means Phase 1 can keep direct local CLI control for colocated projects, while remote placements can target a host-scoped AO web endpoint or MCP endpoint on the machine that owns the project.
 
-- remote daemon lifecycle operations that can target a specific host or agent
-- machine-readable status and command results for start, stop, pause, resume, and health checks
-- a secure transport or agent mode for executing AO commands off-box
-- explicit host enrollment or identity so fleet assignments are stable
-- deterministic error codes and structured payloads for reconciliation and recovery
-- project-root resolution that works against remote filesystems or mapped workspaces
+The important constraint is scope: the current AO web daemon endpoints are scoped to the AO server's configured project root. `ao-fleet` should therefore treat a remote host address as the AO endpoint for the placed project, not as a generic host-wide control plane for arbitrary project roots.
 
-Until those exist, `ao-fleet` should treat host placement as intent and keep execution local to known AO roots.
+The remaining `ao-fleet` work is in:
+
+- transport selection and endpoint configuration
+- host identity, enrollment, and trust
+- placement policy and reconciliation
+- error normalization across local CLI and remote API/MCP paths
+
+`ao-fleet` should treat host placement as a first-class control-plane decision and choose the appropriate AO transport for each project.
 
 ## Recommended System Model
 

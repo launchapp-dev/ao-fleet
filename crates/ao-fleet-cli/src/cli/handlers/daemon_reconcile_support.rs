@@ -54,6 +54,7 @@ pub(crate) fn reconcile_project<C: DaemonController + ?Sized>(
     team_id: String,
     project_id: String,
     project_root: String,
+    target: serde_json::Value,
     desired_state: DaemonDesiredState,
     backlog_count: usize,
     schedule_ids: Vec<String>,
@@ -76,6 +77,7 @@ pub(crate) fn reconcile_project<C: DaemonController + ?Sized>(
         team_id,
         project_id,
         project_root,
+        target,
         desired_state,
         observed_state,
         backlog_count,
@@ -208,7 +210,6 @@ mod tests {
         pause_results: RefCell<VecDeque<Result<DaemonCommandResult, &'static str>>>,
         stop_results: RefCell<VecDeque<Result<DaemonCommandResult, &'static str>>>,
         calls: RefCell<Vec<String>>,
-        sleeps: RefCell<Vec<Duration>>,
     }
 
     impl FakeDaemonController {
@@ -236,10 +237,6 @@ mod tests {
 
         fn calls(&self) -> Vec<String> {
             self.calls.borrow().clone()
-        }
-
-        fn sleeps(&self) -> Vec<Duration> {
-            self.sleeps.borrow().clone()
         }
 
         fn next_status(
@@ -327,6 +324,7 @@ mod tests {
             "team-1".to_string(),
             "project-1".to_string(),
             "/tmp/project".to_string(),
+            serde_json::json!({"transport": "local_cli"}),
             DaemonDesiredState::Running,
             7,
             vec!["schedule-1".to_string()],
@@ -367,6 +365,7 @@ mod tests {
             "team-1".to_string(),
             "project-1".to_string(),
             "/tmp/project".to_string(),
+            serde_json::json!({"transport": "local_cli"}),
             DaemonDesiredState::Running,
             7,
             vec!["schedule-1".to_string()],

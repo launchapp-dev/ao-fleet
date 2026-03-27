@@ -4,6 +4,7 @@ mod errors;
 mod models;
 
 pub use client::ao_daemon_client::AoDaemonClient;
+pub use client::ao_remote_daemon_client::AoRemoteDaemonClient;
 pub use errors::ao_command_error::AoCommandError;
 pub use models::daemon_command_result::DaemonCommandResult;
 pub use models::daemon_start_options::DaemonStartOptions;

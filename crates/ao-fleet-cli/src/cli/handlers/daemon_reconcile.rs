@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 
-use ao_fleet_ao::{AoDaemonClient, DaemonState};
+use ao_fleet_ao::DaemonState;
 use ao_fleet_core::{DaemonDesiredState, ObservedDaemonStatus};
 use ao_fleet_scheduler::schedule_evaluator::ScheduleEvaluator;
 use ao_fleet_store::FleetStore;
@@ -11,13 +11,17 @@ use ao_fleet_store::FleetStore;
 use crate::cli::handlers::daemon_reconcile_command::DaemonReconcileCommand;
 use crate::cli::handlers::daemon_reconcile_support::reconcile_project;
 use crate::cli::handlers::json_printer::print_json;
+use crate::cli::handlers::project_daemon_target::{
+    build_host_map, build_project_host_placement_map, resolve_project_daemon_target,
+};
 
 pub fn daemon_reconcile(db_path: &str, command: DaemonReconcileCommand) -> Result<()> {
     let store = FleetStore::open(db_path)?;
     let schedules = store.list_schedules(None)?;
     let projects = store.list_projects(None)?;
+    let placement_map = build_project_host_placement_map(store.list_project_host_placements()?);
+    let host_map = build_host_map(store.list_hosts()?);
     let backlog_map = parse_backlog_map(command.backlog)?;
-    let ao = AoDaemonClient::new();
     let at = match command.at {
         Some(value) => DateTime::parse_from_rfc3339(&value)?.with_timezone(&Utc),
         None => Utc::now(),
@@ -41,12 +45,14 @@ pub fn daemon_reconcile(db_path: &str, command: DaemonReconcileCommand) -> Resul
         let Some(team_state) = by_team.get(&project.team_id) else {
             continue;
         };
+        let target = resolve_project_daemon_target(&project, &placement_map, &host_map);
 
         let result = reconcile_project(
-            &ao,
+            target.controller(),
             project.team_id.clone(),
             project.id.clone(),
             project.ao_project_root.clone(),
+            target.details(),
             team_state.desired_state,
             team_state.backlog_count,
             team_state.schedule_ids.clone(),
@@ -66,6 +72,7 @@ pub fn daemon_reconcile(db_path: &str, command: DaemonReconcileCommand) -> Resul
                     "action": result.action,
                     "command_result": result.command_result,
                     "apply": command.apply,
+                    "target": result.target,
                 }),
             })?;
         }

@@ -168,9 +168,9 @@ The practical bootstrap loop is:
 4. Add schedules and company knowledge.
 5. Export a snapshot for backup or seed replication.
 6. Run `mcp-serve` as the long-lived control-plane process.
-7. Use `daemon-status --refresh` and `daemon-reconcile --apply` on a timer until remote host control exists in AO CLI.
+7. Use `daemon-status --refresh` and `daemon-reconcile --apply` on a timer. Local projects use direct AO CLI control; placed remote projects should point `ao-fleet` at the host-scoped AO web API or MCP endpoint for that project.
 
-For a founder-run deployment, treat `ao-fleet` as a service with one persistent database path and one long-lived MCP endpoint. Use a service manager such as `systemd` or `launchd` to keep `mcp-serve` running, then schedule reconciliation separately until remote execution lands.
+For a founder-run deployment, treat `ao-fleet` as a service with one persistent database path and one long-lived MCP endpoint. Use a service manager such as `systemd` or `launchd` to keep `mcp-serve` running, then schedule reconciliation separately. Local projects can keep using direct AO CLI control; placed remote projects should use the host-scoped AO API or MCP transport.
 
 ## Repository Map
 
@@ -216,7 +216,7 @@ The design target is "Brain as a product" rather than "a few shell scripts".
 - Config: YAML or TOML for declarative fleet config
 - MCP transport: stdio first, optional HTTP later
 - AO integration: spawn AO CLI and consume AO MCP rather than vendoring AO internals
-- Multi-host control: depends on AO CLI gaining remote execution and host-targeted daemon operations
+- Multi-host control: uses local AO CLI for colocated projects and host-scoped AO web API or MCP for remote placements; AO already has the control surface, and the remaining work lives in `ao-fleet` transport, auth, and placement policy
 
 Rust is the right default because AO is already Rust and the operational parts here are process supervision, scheduling, IO, and durable state.
 

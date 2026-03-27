@@ -39,7 +39,7 @@ For Phase 1, run `ao-fleet` like a founder-operated company control plane:
 4. Add schedules and knowledge records.
 5. Export a config snapshot before major changes or upgrades.
 6. Run `mcp-serve` as the long-lived service process.
-7. Run `daemon-status --refresh` and `daemon-reconcile --apply` on a timer until remote AO CLI execution exists.
+7. Run `daemon-status --refresh` and `daemon-reconcile --apply` on a timer. Local projects use direct AO CLI control; placed remote projects should target a host-scoped AO web API or MCP endpoint.
 
 In practice, that means a service manager such as `systemd` or `launchd` should own the MCP server process, while a separate timer or cron entry can refresh daemon state and reconcile schedules. Keep the database path and snapshot export path stable so backup and restore stay simple.
 
@@ -101,15 +101,15 @@ cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db project-list
 
 ## Register Hosts And Placement Intent
 
-Phase 1 host support is about placement intent, not remote execution. It lets the founder model which machine should own which project before AO CLI grows the remote-control surface.
+Phase 1 host support is about placement intent and transport selection. It lets the founder model which machine should own which project and choose whether a project uses local AO CLI control or a host-scoped AO web API or MCP endpoint.
 
-Register a host:
+Register a host. Use a plain machine name for local intent, or a base URL when the host exposes an AO web API for remote control:
 
 ```bash
 cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db host-create \
   --slug founder-mac \
   --name "Founder Mac" \
-  --address founder.local \
+  --address http://founder.local:7444 \
   --platform macos \
   --status healthy \
   --capacity-slots 6
