@@ -18,10 +18,51 @@ impl NewSchedule {
             });
         }
 
+        validate_windows_for_policy(self.policy_kind, &self.windows)?;
+
         for window in &self.windows {
             window.validate()?;
         }
 
         Ok(())
     }
+}
+
+fn validate_windows_for_policy(
+    policy_kind: SchedulePolicyKind,
+    windows: &[WeekdayWindow],
+) -> Result<(), FleetError> {
+    match policy_kind {
+        SchedulePolicyKind::BusinessHours => {
+            if windows.is_empty() {
+                return Err(FleetError::Validation {
+                    message: "business_hours schedules require at least one window".to_string(),
+                });
+            }
+
+            if windows.iter().any(|window| window.weekdays.is_empty()) {
+                return Err(FleetError::Validation {
+                    message: "business_hours windows require at least one weekday".to_string(),
+                });
+            }
+
+            if windows.iter().any(|window| window.start_hour > window.end_hour) {
+                return Err(FleetError::Validation {
+                    message: "business_hours windows cannot wrap past midnight".to_string(),
+                });
+            }
+        }
+        SchedulePolicyKind::Nightly => {
+            if windows.is_empty() {
+                return Err(FleetError::Validation {
+                    message: "nightly schedules require at least one window".to_string(),
+                });
+            }
+        }
+        SchedulePolicyKind::AlwaysOn
+        | SchedulePolicyKind::ManualOnly
+        | SchedulePolicyKind::BurstOnBacklog => {}
+    }
+
+    Ok(())
 }

@@ -417,6 +417,38 @@ fn validate_schedule(schedule: &Schedule) -> Result<(), StoreError> {
         return Err(StoreError::validation("schedule fields cannot be empty"));
     }
 
+    match schedule.policy_kind {
+        SchedulePolicyKind::BusinessHours => {
+            if schedule.windows.is_empty() {
+                return Err(StoreError::validation(
+                    "business_hours schedules require at least one window",
+                ));
+            }
+
+            if schedule.windows.iter().any(|window| window.weekdays.is_empty()) {
+                return Err(StoreError::validation(
+                    "business_hours windows require at least one weekday",
+                ));
+            }
+
+            if schedule.windows.iter().any(|window| window.start_hour > window.end_hour) {
+                return Err(StoreError::validation(
+                    "business_hours windows cannot wrap past midnight",
+                ));
+            }
+        }
+        SchedulePolicyKind::Nightly => {
+            if schedule.windows.is_empty() {
+                return Err(StoreError::validation(
+                    "nightly schedules require at least one window",
+                ));
+            }
+        }
+        SchedulePolicyKind::AlwaysOn
+        | SchedulePolicyKind::ManualOnly
+        | SchedulePolicyKind::BurstOnBacklog => {}
+    }
+
     for window in &schedule.windows {
         validate_window(window)?;
     }
@@ -425,17 +457,13 @@ fn validate_schedule(schedule: &Schedule) -> Result<(), StoreError> {
 }
 
 fn validate_window(window: &WeekdayWindow) -> Result<(), StoreError> {
-    if window.weekdays.is_empty() {
-        return Err(StoreError::validation("weekday window requires at least one weekday"));
-    }
-
     if window.weekdays.iter().any(|weekday| *weekday > 6) {
         return Err(StoreError::validation("weekday window weekdays must be in the range 0..=6"));
     }
 
-    if window.start_hour > 23 || window.end_hour > 24 || window.start_hour >= window.end_hour {
+    if window.start_hour > 23 || window.end_hour > 24 || window.start_hour == window.end_hour {
         return Err(StoreError::validation(
-            "weekday window hours must satisfy 0 <= start < end <= 24",
+            "weekday window hours must satisfy 0 <= start <= 23, 0 <= end <= 24, and start != end",
         ));
     }
 

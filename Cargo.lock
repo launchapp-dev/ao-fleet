@@ -90,6 +90,7 @@ dependencies = [
  "ao-fleet-store",
  "chrono",
  "clap",
+ "serde",
  "serde_json",
 ]
 

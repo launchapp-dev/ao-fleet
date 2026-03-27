@@ -1,6 +1,9 @@
 [workspace]
 members = [
+  "crates/ao-fleet-cli",
   "crates/ao-fleet-core",
+  "crates/ao-fleet-mcp",
+  "crates/ao-fleet-scheduler",
   "crates/ao-fleet-store",
 ]
 resolver = "2"

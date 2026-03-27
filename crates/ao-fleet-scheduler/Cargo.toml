@@ -1,0 +1,13 @@
+[package]
+name = "ao-fleet-scheduler"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ao-fleet-core = { path = "../ao-fleet-core" }
+anyhow.workspace = true
+chrono.workspace = true
+chrono-tz.workspace = true
+serde.workspace = true
+thiserror.workspace = true
