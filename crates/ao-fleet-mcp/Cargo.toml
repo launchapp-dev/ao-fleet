@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 ao-fleet-core = { path = "../ao-fleet-core" }
+ao-fleet-knowledge = { path = "../ao-fleet-knowledge" }
 ao-fleet-scheduler = { path = "../ao-fleet-scheduler" }
 ao-fleet-store = { path = "../ao-fleet-store" }
 chrono.workspace = true

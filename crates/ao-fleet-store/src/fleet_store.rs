@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use ao_fleet_core::{
     AuditEvent, DaemonDesiredState, KnowledgeDocument, KnowledgeFact, KnowledgeScope,
-    KnowledgeSource, NewAuditEvent, NewProject, NewSchedule, NewTeam, Project, Schedule,
-    SchedulePolicyKind, Team, WeekdayWindow,
+    KnowledgeSource, NewAuditEvent, NewProject, NewSchedule, NewTeam, ObservedDaemonStatus,
+    Project, Schedule, SchedulePolicyKind, Team, WeekdayWindow,
 };
 use ao_fleet_scheduler::schedule_evaluator::ScheduleEvaluator;
 use chrono::{DateTime, Utc};
@@ -16,6 +16,7 @@ use serde::de::DeserializeOwned;
 use uuid::Uuid;
 
 use crate::errors::store_error::StoreError;
+use crate::models::fleet_daemon_status::FleetDaemonStatus;
 use crate::models::fleet_overview::FleetOverview;
 use crate::models::fleet_overview_query::FleetOverviewQuery;
 use crate::models::fleet_overview_summary::FleetOverviewSummary;
@@ -31,6 +32,7 @@ const MIGRATION_SQL: &[&str] = &[
     include_str!("../sql/migrations/002_create_schema.sql"),
     include_str!("../sql/migrations/003_create_audit_events.sql"),
     include_str!("../sql/migrations/004_create_knowledge_tables.sql"),
+    include_str!("../sql/migrations/005_create_observed_daemon_statuses.sql"),
 ];
 
 #[derive(Debug, Clone)]
@@ -85,6 +87,61 @@ impl FleetStore {
         let limit = limit.unwrap_or(100);
         let mut stmt = conn.prepare(include_str!("../sql/audit_event/list.sql"))?;
         let rows = stmt.query_map(params![team_id, limit as i64], audit_event_from_row)?;
+        collect_rows(rows)
+    }
+
+    pub fn upsert_observed_daemon_status(
+        &self,
+        status: ObservedDaemonStatus,
+    ) -> Result<ObservedDaemonStatus, StoreError> {
+        let mut conn = self.connection()?;
+        let tx = conn.transaction()?;
+        tx.execute(
+            include_str!("../sql/observed_daemon_status/upsert.sql"),
+            params![
+                status.project_id,
+                status.team_id,
+                enum_to_text(&status.observed_state)?,
+                status.source,
+                status.checked_at.to_rfc3339(),
+                status.details.to_string(),
+            ],
+        )?;
+        tx.commit()?;
+        Ok(status)
+    }
+
+    pub fn get_observed_daemon_status(
+        &self,
+        project_id: &str,
+    ) -> Result<Option<ObservedDaemonStatus>, StoreError> {
+        let conn = self.connection()?;
+        conn.query_row(
+            include_str!("../sql/observed_daemon_status/get.sql"),
+            params![project_id],
+            observed_daemon_status_from_row,
+        )
+        .optional()
+        .map_err(Into::into)
+    }
+
+    pub fn list_observed_daemon_statuses(
+        &self,
+        team_id: Option<&str>,
+    ) -> Result<Vec<ObservedDaemonStatus>, StoreError> {
+        let conn = self.connection()?;
+        let mut stmt = conn.prepare(include_str!("../sql/observed_daemon_status/list.sql"))?;
+        let rows = stmt.query_map(params![team_id], observed_daemon_status_from_row)?;
+        collect_rows(rows)
+    }
+
+    pub fn fleet_daemon_statuses(
+        &self,
+        team_id: Option<&str>,
+    ) -> Result<Vec<FleetDaemonStatus>, StoreError> {
+        let conn = self.connection()?;
+        let mut stmt = conn.prepare(include_str!("../sql/observed_daemon_status/list_view.sql"))?;
+        let rows = stmt.query_map(params![team_id], fleet_daemon_status_from_row)?;
         collect_rows(rows)
     }
 
@@ -813,6 +870,12 @@ impl FleetStore {
             schedules_by_team.entry(schedule.team_id.clone()).or_default().push(schedule);
         }
 
+        let stored_observed_state_by_team = if query.observed_state_by_team.is_empty() {
+            observed_state_by_team(self.list_observed_daemon_statuses(team_filter)?)
+        } else {
+            BTreeMap::new()
+        };
+
         let mut team_overviews = Vec::with_capacity(teams.len());
         let mut preview_items = Vec::with_capacity(teams.len());
         let mut team_count = 0_usize;
@@ -832,6 +895,7 @@ impl FleetStore {
                 .observed_state_by_team
                 .get(&team.id)
                 .copied()
+                .or_else(|| stored_observed_state_by_team.get(&team.id).copied())
                 .unwrap_or_else(|| infer_observed_state(&team_projects));
 
             let reconcile_preview = FleetReconcilePreviewItem {
@@ -1009,6 +1073,21 @@ fn reconcile_action(
     }
 }
 
+fn observed_state_by_team(
+    statuses: Vec<ObservedDaemonStatus>,
+) -> BTreeMap<String, DaemonDesiredState> {
+    let mut states = BTreeMap::new();
+
+    for status in statuses {
+        states
+            .entry(status.team_id)
+            .and_modify(|current| *current = merge_desired_state(*current, status.observed_state))
+            .or_insert(status.observed_state);
+    }
+
+    states
+}
+
 fn audit_event_from_row(row: &Row<'_>) -> Result<AuditEvent, rusqlite::Error> {
     let details_json: String = row.get(8)?;
     let details: serde_json::Value = serde_json::from_str(&details_json).map_err(|error| {
@@ -1026,6 +1105,49 @@ fn audit_event_from_row(row: &Row<'_>) -> Result<AuditEvent, rusqlite::Error> {
         summary: row.get(7)?,
         details,
         occurred_at: parse_datetime_sql(9, row.get::<_, String>(9)?)?,
+    })
+}
+
+fn observed_daemon_status_from_row(row: &Row<'_>) -> Result<ObservedDaemonStatus, rusqlite::Error> {
+    let details_json: String = row.get(5)?;
+    let details = serde_json::from_str(&details_json).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(5, Type::Text, Box::new(error))
+    })?;
+
+    Ok(ObservedDaemonStatus {
+        project_id: row.get(0)?,
+        team_id: row.get(1)?,
+        observed_state: enum_from_text_sql(2, row.get::<_, String>(2)?)?,
+        source: row.get(3)?,
+        checked_at: parse_datetime_sql(4, row.get::<_, String>(4)?)?,
+        details,
+    })
+}
+
+fn fleet_daemon_status_from_row(row: &Row<'_>) -> Result<FleetDaemonStatus, rusqlite::Error> {
+    let details = row
+        .get::<_, Option<String>>(9)?
+        .map(|value| {
+            serde_json::from_str(&value).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(9, Type::Text, Box::new(error))
+            })
+        })
+        .transpose()?;
+
+    Ok(FleetDaemonStatus {
+        team_id: row.get(0)?,
+        team_slug: row.get(1)?,
+        project_id: row.get(2)?,
+        project_slug: row.get(3)?,
+        project_root: row.get(4)?,
+        desired_state: enum_from_text_sql(5, row.get::<_, String>(5)?)?,
+        observed_state: row
+            .get::<_, Option<String>>(6)?
+            .map(|value| enum_from_text_sql(6, value))
+            .transpose()?,
+        checked_at: parse_optional_datetime_sql(7, row.get::<_, Option<String>>(7)?)?,
+        source: row.get(8)?,
+        details,
     })
 }
 

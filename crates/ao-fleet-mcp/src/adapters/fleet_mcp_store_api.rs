@@ -4,16 +4,21 @@ use ao_fleet_core::{
     DaemonDesiredState, KnowledgeDocument, KnowledgeFact, KnowledgeSource, NewProject, NewSchedule,
     NewTeam, Project, Schedule, Team,
 };
+use ao_fleet_knowledge::{KnowledgeQuery, KnowledgeSearchResult, KnowledgeSearchService};
 use ao_fleet_scheduler::schedule_evaluator::ScheduleEvaluator;
-use ao_fleet_store::{FleetOverview, FleetOverviewQuery, FleetStore, KnowledgeRecordQuery};
+use ao_fleet_store::{
+    FleetDaemonStatus, FleetOverview, FleetOverviewQuery, FleetStore, KnowledgeRecordQuery,
+};
 use chrono::Utc;
 
 use crate::api::fleet_mcp_api::FleetMcpApi;
 use crate::error::fleet_mcp_error::FleetMcpError;
 use crate::inputs::daemon_reconcile_input::DaemonReconcileInput;
+use crate::inputs::daemon_status_input::DaemonStatusInput;
 use crate::inputs::knowledge_document_create_input::KnowledgeDocumentCreateInput;
 use crate::inputs::knowledge_fact_create_input::KnowledgeFactCreateInput;
 use crate::inputs::knowledge_record_list_input::KnowledgeRecordListInput;
+use crate::inputs::knowledge_search_input::KnowledgeSearchInput;
 use crate::inputs::knowledge_source_upsert_input::KnowledgeSourceUpsertInput;
 use crate::inputs::project_create_input::ProjectCreateInput;
 use crate::inputs::project_list_input::ProjectListInput;
@@ -37,6 +42,13 @@ impl FleetMcpStoreApi {
 impl FleetMcpApi for FleetMcpStoreApi {
     fn fleet_overview(&self, input: FleetOverviewQuery) -> Result<FleetOverview, FleetMcpError> {
         self.store.fleet_overview(input).map_err(Into::into)
+    }
+
+    fn daemon_statuses(
+        &self,
+        input: DaemonStatusInput,
+    ) -> Result<Vec<FleetDaemonStatus>, FleetMcpError> {
+        self.store.fleet_daemon_statuses(input.team_id.as_deref()).map_err(Into::into)
     }
 
     fn list_teams(&self, _input: TeamListInput) -> Result<Vec<Team>, FleetMcpError> {
@@ -117,6 +129,31 @@ impl FleetMcpApi for FleetMcpStoreApi {
         input: KnowledgeRecordListInput,
     ) -> Result<Vec<KnowledgeFact>, FleetMcpError> {
         self.store.list_knowledge_facts(record_query_from_input(input)).map_err(Into::into)
+    }
+
+    fn search_knowledge(
+        &self,
+        input: KnowledgeSearchInput,
+    ) -> Result<KnowledgeSearchResult, FleetMcpError> {
+        let query = KnowledgeQuery {
+            scope: input.scope,
+            scope_ref: input.scope_ref.clone(),
+            document_kinds: input.document_kinds,
+            fact_kinds: input.fact_kinds,
+            source_kinds: input.source_kinds,
+            tags: input.tags,
+            text: input.text,
+            limit: input.limit,
+        };
+        let records = KnowledgeRecordQuery {
+            scope: query.scope.clone(),
+            scope_ref: query.scope_ref.clone(),
+            limit: query.limit,
+        };
+        let documents = self.store.list_knowledge_documents(records.clone())?;
+        let facts = self.store.list_knowledge_facts(records)?;
+
+        Ok(KnowledgeSearchService::default().search(&query, &documents, &facts))
     }
 
     fn upsert_knowledge_source(

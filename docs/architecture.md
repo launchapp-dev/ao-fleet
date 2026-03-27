@@ -11,14 +11,27 @@ The current LaunchApp/AO ecosystem already contains four useful signals:
 
 What none of those repos currently provide is a durable, standalone fleet control plane.
 
+## Company, Teams, Projects
+
+The product model is:
+
+- company: `ao-fleet`
+- team: one AO instance with a mission and ownership boundary
+- project: a repo or workspace owned by a team
+- knowledge: shared company memory, scoped to company, team, project, or operational context
+
+Operators think in teams, not raw repos. A marketing team can own campaign repos, while an app team can own one or more application repos. `ao-fleet` coordinates those teams and keeps the company-level view.
+
 ## What The New Service Should Own
 
 `ao-fleet` should own:
 
+- inventory of managed teams
 - inventory of managed repos
-- desired-state scheduling for projects
+- desired-state scheduling for teams and projects
 - daemon lifecycle policy
 - fleet audit history
+- company knowledge capture and retrieval
 - fleet-wide MCP tools
 - fleet-native AO workflows
 
@@ -30,10 +43,11 @@ AO's daemon is intentionally a dumb per-project scheduler. It manages dispatches
 
 That separation is useful. It means `ao-fleet` can stay focused on:
 
-- which repos should run
+- which teams and repos should run
 - when they should run
 - with what pool size or runtime policy
 - what cross-project workflows should fire
+- what knowledge should be captured and surfaced to operators
 
 AO can keep doing:
 
@@ -48,9 +62,11 @@ AO can keep doing:
                     +----------------------+
                     |      ao-fleet        |
                     |----------------------|
-                    | registry             |
+                    | company registry     |
+                    | team/project store   |
                     | scheduler            |
                     | policy engine        |
+                    | knowledge base       |
                     | audit/event log      |
                     | fleet MCP server     |
                     | embedded AO project  |
@@ -66,6 +82,35 @@ AO can keep doing:
          | AO MCP       |              | AO MCP       |
          +--------------+              +--------------+
 ```
+
+## Knowledge Flow
+
+The company knowledge base should ingest from:
+
+- operator-authored notes
+- schedule changes
+- daemon reconcile results
+- fleet audit events
+- AO workflow runs
+- Git commits, issues, and pull requests when integrated later
+
+Knowledge should be stored with provenance and separated into:
+
+- company knowledge for org-wide decisions and policy
+- team knowledge for mission-specific context
+- operational knowledge for incidents and execution history
+
+The current CLI surface already reflects that shape:
+
+- `knowledge-source-upsert`
+- `knowledge-source-list`
+- `knowledge-document-create`
+- `knowledge-document-list`
+- `knowledge-fact-create`
+- `knowledge-fact-list`
+- `knowledge-search`
+
+The MCP surface mirrors it with `fleet.knowledge.*` tools.
 
 ## Scheduling Model
 
@@ -88,6 +133,16 @@ Each policy can map to concrete behavior:
 
 This is better than only storing cron strings because operators think in desired availability, not raw scheduler syntax.
 
+Current policy kinds are:
+
+- `always_on`
+- `business_hours`
+- `nightly`
+- `manual_only`
+- `burst_on_backlog`
+
+Weekday windows use numeric weekdays with `0 = Monday` and `6 = Sunday`.
+
 ## MCP Shape
 
 The MCP surface should be split into:
@@ -98,6 +153,7 @@ The MCP surface should be split into:
 - policy: `fleet.policy.preview`, `fleet.policy.apply`
 - workflows: `fleet.workflow.run`, `fleet.workflow.list`
 - observability: `fleet.events.tail`, `fleet.audit.list`, `fleet.health.overview`
+- knowledge: `fleet.knowledge.source.list`, `fleet.knowledge.source.upsert`, `fleet.knowledge.document.list`, `fleet.knowledge.document.create`, `fleet.knowledge.fact.list`, `fleet.knowledge.fact.create`, `fleet.knowledge.search`
 
 ## Embedded AO Strategy
 
@@ -144,6 +200,7 @@ Move it from direct AO filesystem discovery toward `ao-fleet` as the control-pla
 - schedule state
 - daemon intent vs actual state
 - fleet audit history
+- company knowledge search
 
 ## External Pattern Check
 
@@ -159,6 +216,20 @@ The implication for `ao-fleet` is clear:
 - overlap and pause semantics should be first-class
 - auditability matters as much as execution
 
+## Current Operator Surface
+
+The docs should match the implemented CLI and MCP surface:
+
+- `db-init`
+- `team-create`, `team-get`, `team-list`, `team-update`, `team-delete`
+- `project-create`, `project-get`, `project-list`, `project-update`, `project-delete`
+- `schedule-create`, `schedule-get`, `schedule-list`, `schedule-update`, `schedule-delete`
+- `audit-list`
+- `daemon-reconcile`
+- `mcp-list`
+- `mcp-serve`
+- knowledge source, document, fact, and search commands
+
 ## Recommended First Build Slice
 
 Build this first:
@@ -168,5 +239,6 @@ Build this first:
 3. Project daemon desired-state controller.
 4. Schedule engine for project activity windows.
 5. MCP server exposing read/write fleet operations.
+6. Knowledge write and search flows.
 
 Only after that should richer AI automation and dashboard coupling expand.

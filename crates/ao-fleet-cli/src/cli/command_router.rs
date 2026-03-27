@@ -1,12 +1,16 @@
 use anyhow::Result;
 
 use crate::cli::handlers::audit_list::audit_list;
+use crate::cli::handlers::config_snapshot_export::config_snapshot_export;
+use crate::cli::handlers::config_snapshot_import::config_snapshot_import;
 use crate::cli::handlers::daemon_reconcile::daemon_reconcile;
+use crate::cli::handlers::daemon_status::daemon_status;
 use crate::cli::handlers::db_init::db_init;
 use crate::cli::handlers::knowledge_document_create::knowledge_document_create;
 use crate::cli::handlers::knowledge_document_list::knowledge_document_list;
 use crate::cli::handlers::knowledge_fact_create::knowledge_fact_create;
 use crate::cli::handlers::knowledge_fact_list::knowledge_fact_list;
+use crate::cli::handlers::knowledge_search::knowledge_search;
 use crate::cli::handlers::knowledge_source_list::knowledge_source_list;
 use crate::cli::handlers::knowledge_source_upsert::knowledge_source_upsert;
 use crate::cli::handlers::mcp_list::mcp_list;
@@ -32,6 +36,12 @@ pub fn route_command(root: RootCommand) -> Result<()> {
     match root.command {
         CommandGroup::DbInit(command) => db_init(&root.db_path, command),
         CommandGroup::AuditList(command) => audit_list(&root.db_path, command),
+        CommandGroup::ConfigSnapshotExport(command) => {
+            config_snapshot_export(&root.db_path, command)
+        }
+        CommandGroup::ConfigSnapshotImport(command) => {
+            config_snapshot_import(&root.db_path, command)
+        }
         CommandGroup::TeamCreate(command) => team_create(&root.db_path, command),
         CommandGroup::TeamGet(command) => team_get(&root.db_path, command),
         CommandGroup::TeamList(command) => team_list(&root.db_path, command),
@@ -59,6 +69,8 @@ pub fn route_command(root: RootCommand) -> Result<()> {
         }
         CommandGroup::KnowledgeFactCreate(command) => knowledge_fact_create(&root.db_path, command),
         CommandGroup::KnowledgeFactList(command) => knowledge_fact_list(&root.db_path, command),
+        CommandGroup::KnowledgeSearch(command) => knowledge_search(&root.db_path, command),
+        CommandGroup::DaemonStatus(command) => daemon_status(&root.db_path, command),
         CommandGroup::DaemonReconcile(command) => daemon_reconcile(&root.db_path, command),
         CommandGroup::McpList(command) => mcp_list(command),
         CommandGroup::McpServe(command) => mcp_serve(&root.db_path, command),

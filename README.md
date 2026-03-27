@@ -1,6 +1,26 @@
 # AO Fleet
 
-Fleet control plane for AO daemons, schedules, MCP, and cross-project workflows.
+`ao-fleet` is the company layer above AO teams.
+
+It is the control plane for:
+
+- team and project inventory
+- schedule policy and daemon intent
+- fleet audit history
+- knowledge capture and retrieval
+- fleet-native MCP tools
+- company-wide AO workflows
+
+## Mental Model
+
+Think of the system like this:
+
+- `ao-fleet` is the company
+- an AO instance is a team
+- a project is a repo or workspace owned by a team
+- the knowledge base is company memory
+
+That means a marketing team can own marketing repos, while an app team can own one product repo or several repos. `ao-fleet` coordinates the teams; AO still executes the work inside each repo.
 
 ## Why This Exists
 
@@ -13,12 +33,115 @@ AO already solves per-project orchestration well:
 What is still missing is a true fleet-level control plane:
 
 - one place to register and classify managed repos
-- one place to define when projects should be active
+- one place to define when teams and projects should be active
 - one place to start, pause, stop, and rebalance AO daemons
-- one place to run cross-project workflows and operational automations
+- one place to store company knowledge and operational history
 - one MCP surface for the whole fleet
 
 `ao-fleet` is that layer.
+
+## Current Surface
+
+The repository currently exposes:
+
+- CLI commands for team, project, schedule, audit, daemon, and knowledge operations
+- a stdio MCP server for `fleet.*` tools
+- SQLite-backed fleet state
+- a company knowledge base with sources, documents, facts, and search
+
+## Quick Start
+
+Create a local database:
+
+```bash
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db db-init
+```
+
+Create a company team:
+
+```bash
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db team-create \
+  --slug marketing \
+  --name Marketing \
+  --mission "owns launch campaigns and growth ops" \
+  --ownership company \
+  --business-priority 80
+```
+
+Create a repo/project under that team:
+
+```bash
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db project-create \
+  --team-id <TEAM_ID> \
+  --slug marketing-site \
+  --root-path /Users/me/marketing-site \
+  --ao-project-root /Users/me/marketing-site \
+  --default-branch main \
+  --enabled
+```
+
+Create a business-hours schedule. Weekday numbers use `0 = Monday` and `6 = Sunday`:
+
+```bash
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db schedule-create \
+  --team-id <TEAM_ID> \
+  --timezone America/Mexico_City \
+  --policy-kind business_hours \
+  --window 0,9,17 \
+  --window 1,9,17 \
+  --window 2,9,17 \
+  --window 3,9,17 \
+  --window 4,9,17 \
+  --enabled
+```
+
+Write company knowledge:
+
+```bash
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db knowledge-source-upsert \
+  --scope team \
+  --scope-ref <TEAM_ID> \
+  --kind manual_note \
+  --label launch-notes \
+  --uri file:///ops/launch.md \
+  --sync-state ready
+
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db knowledge-document-create \
+  --scope team \
+  --scope-ref <TEAM_ID> \
+  --kind runbook \
+  --source-kind manual_note \
+  --source-id <SOURCE_ID> \
+  --title "Campaign launch checklist" \
+  --summary "Operational checklist for launches" \
+  --body "Verify the launch checklist before enabling the campaign." \
+  --tag marketing
+
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db knowledge-search \
+  --scope team \
+  --scope-ref <TEAM_ID> \
+  --text launch \
+  --tag marketing \
+  --document-kind runbook
+```
+
+Reconcile daemon intent with observed state:
+
+```bash
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db daemon-reconcile --apply
+```
+
+Start the MCP server:
+
+```bash
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db mcp-serve
+```
+
+## Repository Map
+
+- `README.md`: product overview and operator entry point
+- `docs/architecture.md`: system model and implementation shape
+- `docs/operator-guide.md`: concrete CLI workflows and examples
 
 ## Product Direction
 
@@ -27,6 +150,7 @@ This repo is intended to become a standalone open-source service and CLI that:
 - manages many AO projects from one fleet registry
 - schedules project activity windows and operational policies
 - supervises AO daemons across the fleet
+- stores company knowledge and makes it searchable
 - exposes a fleet-native MCP server
 - runs its own AO instance for smart workflow automation across repos
 
@@ -49,70 +173,10 @@ The design target is "Brain as a product" rather than "a few shell scripts".
 - `ao-fleet-pack`: workflow ideas and fleet agent patterns to migrate here
 - `brain`: private operator workspace that proved the operating model
 
-## Proposed Architecture
-
-### 1. Fleet Registry
-
-A persistent registry of managed projects with metadata such as:
-
-- local path or clone URL
-- default branch
-- stack tags
-- desired AO status
-- scheduling windows
-- daemon policy
-- ownership and environment labels
-
-### 2. Fleet Scheduler
-
-A scheduler that decides when a project should be:
-
-- active
-- paused
-- warmed but idle
-- completely stopped
-
-This is where per-project run windows live, such as "run weekdays from 9am to 6pm" or "only run nightly reconciliation".
-
-### 3. Project Adapter Layer
-
-An AO-aware adapter that talks to each managed project through stable AO surfaces:
-
-- AO CLI
-- AO MCP
-- AO runtime state
-
-It should avoid direct mutation of repo internals unless AO itself explicitly requires it.
-
-### 4. Embedded Fleet AO
-
-`ao-fleet` should also be an AO project itself. That lets it run higher-order workflows such as:
-
-- fleet reconciliation
-- crash recovery
-- queue pressure rebalancing
-- repo provisioning
-- stale branch cleanup
-- PR and deployment sweeps
-- policy drift detection
-
-### 5. Fleet MCP Server
-
-The fleet service should expose its own MCP namespace for control-plane operations:
-
-- `fleet.project.*`
-- `fleet.daemon.*`
-- `fleet.schedule.*`
-- `fleet.policy.*`
-- `fleet.workflow.*`
-- `fleet.audit.*`
-
-That MCP surface becomes the integration point for dashboards, agents, and external automation.
-
 ## Suggested Technical Shape
 
 - Language: Rust
-- Primary binary: `ao-fleet`
+- Current CLI binary: `ao-fleet-cli`
 - Persistence: SQLite for fleet state and history
 - Config: YAML or TOML for declarative fleet config
 - MCP transport: stdio first, optional HTTP later
@@ -120,38 +184,6 @@ That MCP surface becomes the integration point for dashboards, agents, and exter
 
 Rust is the right default because AO is already Rust and the operational parts here are process supervision, scheduling, IO, and durable state.
 
-## Initial Roadmap
-
-### Phase 1
-
-- fleet registry
-- project discovery/import
-- start/stop/status for project daemons
-- first-class schedule windows
-- fleet MCP read/write tools
-
-### Phase 2
-
-- embedded fleet AO project
-- policy engine for pool sizing and active windows
-- audit log and fleet event stream
-- migration of `ao-fleet-tools` functionality
-
-### Phase 3
-
-- dashboard-facing API surface
-- richer topology and dependency awareness
-- multi-machine fleet support
-- remote runner support
-
-## Open Design Decisions
-
-- Should schedules express desired daemon state, desired workflow activity, or both?
-- Should project scheduling be config-first, AO-task-driven, or hybrid?
-- How much state should live in declarative files vs SQLite?
-- When should `ao-fleet` call AO MCP directly vs shell out to `ao`?
-- How should remote hosts and non-local fleets be modeled?
-
 ## Status
 
-This repo currently contains the product definition and architecture direction. Implementation should start with the fleet registry, scheduler, and MCP surface.
+The repo has a working core surface for registry, scheduling, daemon reconciliation, MCP, and knowledge operations. The next operator-facing layers live in `docs/operator-guide.md` and `docs/architecture.md`.

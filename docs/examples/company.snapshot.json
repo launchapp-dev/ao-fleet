@@ -1,0 +1,260 @@
+{
+  "generated_at": "2026-03-27T05:30:00Z",
+  "company": {
+    "name": "LaunchApp",
+    "model": "ao-fleet company with team-level AO instances",
+    "description": "A small company with three AO teams: marketing, aurora-app, and platform."
+  },
+  "teams": [
+    {
+      "id": "team_marketing",
+      "slug": "marketing",
+      "name": "Marketing",
+      "mission": "Own launch messaging, campaigns, and the marketing site.",
+      "ownership": "company",
+      "business_priority": 80,
+      "created_at": "2026-03-27T05:30:00Z",
+      "updated_at": "2026-03-27T05:30:00Z"
+    },
+    {
+      "id": "team_aurora_app",
+      "slug": "aurora-app",
+      "name": "Aurora App",
+      "mission": "Own the product app and its release cadence.",
+      "ownership": "company",
+      "business_priority": 95,
+      "created_at": "2026-03-27T05:30:00Z",
+      "updated_at": "2026-03-27T05:30:00Z"
+    },
+    {
+      "id": "team_platform",
+      "slug": "platform",
+      "name": "Platform",
+      "mission": "Own AO runtime, shared fleet tooling, and cross-team reliability.",
+      "ownership": "company",
+      "business_priority": 100,
+      "created_at": "2026-03-27T05:30:00Z",
+      "updated_at": "2026-03-27T05:30:00Z"
+    }
+  ],
+  "projects": [
+    {
+      "id": "project_marketing_site",
+      "team_id": "team_marketing",
+      "slug": "marketing-site",
+      "root_path": "/Users/samishukri/brain/repos/marketing-site",
+      "ao_project_root": "/Users/samishukri/brain/repos/marketing-site/.ao",
+      "default_branch": "main",
+      "enabled": true,
+      "created_at": "2026-03-27T05:30:00Z",
+      "updated_at": "2026-03-27T05:30:00Z"
+    },
+    {
+      "id": "project_aurora_web",
+      "team_id": "team_aurora_app",
+      "slug": "aurora-web",
+      "root_path": "/Users/samishukri/brain/repos/aurora-web",
+      "ao_project_root": "/Users/samishukri/brain/repos/aurora-web/.ao",
+      "default_branch": "main",
+      "enabled": true,
+      "created_at": "2026-03-27T05:30:00Z",
+      "updated_at": "2026-03-27T05:30:00Z"
+    },
+    {
+      "id": "project_platform_ops",
+      "team_id": "team_platform",
+      "slug": "platform-ops",
+      "root_path": "/Users/samishukri/brain/repos/ao-fleet",
+      "ao_project_root": "/Users/samishukri/brain/repos/ao-fleet/.ao",
+      "default_branch": "main",
+      "enabled": true,
+      "created_at": "2026-03-27T05:30:00Z",
+      "updated_at": "2026-03-27T05:30:00Z"
+    }
+  ],
+  "schedules": [
+    {
+      "id": "schedule_marketing_business_hours",
+      "team_id": "team_marketing",
+      "timezone": "America/Mexico_City",
+      "policy_kind": "business_hours",
+      "windows": [
+        {
+          "weekdays": [1, 2, 3, 4, 5],
+          "start_hour": 9,
+          "end_hour": 17
+        }
+      ],
+      "enabled": true,
+      "created_at": "2026-03-27T05:30:00Z",
+      "updated_at": "2026-03-27T05:30:00Z"
+    },
+    {
+      "id": "schedule_aurora_nightly",
+      "team_id": "team_aurora_app",
+      "timezone": "America/Mexico_City",
+      "policy_kind": "nightly",
+      "windows": [
+        {
+          "weekdays": [1, 2, 3, 4, 5],
+          "start_hour": 20,
+          "end_hour": 24
+        }
+      ],
+      "enabled": true,
+      "created_at": "2026-03-27T05:30:00Z",
+      "updated_at": "2026-03-27T05:30:00Z"
+    },
+    {
+      "id": "schedule_platform_burst_on_backlog",
+      "team_id": "team_platform",
+      "timezone": "America/Mexico_City",
+      "policy_kind": "burst_on_backlog",
+      "windows": [
+        {
+          "weekdays": [1, 2, 3, 4, 5],
+          "start_hour": 8,
+          "end_hour": 18
+        }
+      ],
+      "enabled": true,
+      "created_at": "2026-03-27T05:30:00Z",
+      "updated_at": "2026-03-27T05:30:00Z"
+    }
+  ],
+  "knowledge_sources": [
+    {
+      "id": "knowledge_source_company_policy",
+      "kind": "manual_note",
+      "label": "company-policy",
+      "uri": "file:///Users/samishukri/brain/repos/ao-fleet/docs/examples/company-policy.md",
+      "scope": "global",
+      "scope_ref": null,
+      "sync_state": "ready",
+      "last_synced_at": "2026-03-27T05:30:00Z",
+      "metadata": {
+        "owner": "platform",
+        "purpose": "company operating policy"
+      },
+      "created_at": "2026-03-27T05:30:00Z",
+      "updated_at": "2026-03-27T05:30:00Z"
+    },
+    {
+      "id": "knowledge_source_marketing_notes",
+      "kind": "manual_note",
+      "label": "marketing-notes",
+      "uri": "file:///Users/samishukri/brain/repos/ao-fleet/docs/examples/marketing-notes.md",
+      "scope": "team",
+      "scope_ref": "team_marketing",
+      "sync_state": "ready",
+      "last_synced_at": "2026-03-27T05:30:00Z",
+      "metadata": {
+        "owner": "marketing",
+        "purpose": "campaign and launch notes"
+      },
+      "created_at": "2026-03-27T05:30:00Z",
+      "updated_at": "2026-03-27T05:30:00Z"
+    },
+    {
+      "id": "knowledge_source_aurora_runbook",
+      "kind": "manual_note",
+      "label": "aurora-runbook",
+      "uri": "file:///Users/samishukri/brain/repos/ao-fleet/docs/examples/aurora-runbook.md",
+      "scope": "team",
+      "scope_ref": "team_aurora_app",
+      "sync_state": "ready",
+      "last_synced_at": "2026-03-27T05:30:00Z",
+      "metadata": {
+        "owner": "aurora-app",
+        "purpose": "nightly build and release notes"
+      },
+      "created_at": "2026-03-27T05:30:00Z",
+      "updated_at": "2026-03-27T05:30:00Z"
+    }
+  ],
+  "knowledge_documents": [
+    {
+      "id": "knowledge_document_company_brief",
+      "scope": "global",
+      "scope_ref": null,
+      "kind": "brief",
+      "title": "LaunchApp operating model",
+      "summary": "The company layer coordinates teams, schedules, and knowledge.",
+      "body": "ao-fleet is the company control plane. Each AO team owns its own project, schedule policy, and operational knowledge. Platform sets policy and observes fleet health.",
+      "source_id": "knowledge_source_company_policy",
+      "source_kind": "manual_note",
+      "tags": ["company", "policy", "fleet"],
+      "created_at": "2026-03-27T05:30:00Z",
+      "updated_at": "2026-03-27T05:30:00Z"
+    },
+    {
+      "id": "knowledge_document_marketing_runbook",
+      "scope": "team",
+      "scope_ref": "team_marketing",
+      "kind": "runbook",
+      "title": "Launch checklist for campaign days",
+      "summary": "How marketing prepares a launch day and coordinates with the company layer.",
+      "body": "Check the launch brief, publish the campaign assets before business hours, and keep the AO team on business-hours scheduling so it can respond to feedback during the day.",
+      "source_id": "knowledge_source_marketing_notes",
+      "source_kind": "manual_note",
+      "tags": ["marketing", "launch", "business-hours"],
+      "created_at": "2026-03-27T05:30:00Z",
+      "updated_at": "2026-03-27T05:30:00Z"
+    },
+    {
+      "id": "knowledge_document_aurora_profile",
+      "scope": "team",
+      "scope_ref": "team_aurora_app",
+      "kind": "project_profile",
+      "title": "Aurora app operating profile",
+      "summary": "Aurora runs on a nightly schedule so daytime work stays focused on product and demos.",
+      "body": "The aurora-app team uses nightly execution windows to keep the app moving while avoiding peak collaboration hours. Platform monitors the fleet and escalates when a nightly run misses its window.",
+      "source_id": "knowledge_source_aurora_runbook",
+      "source_kind": "manual_note",
+      "tags": ["aurora", "nightly", "app"],
+      "created_at": "2026-03-27T05:30:00Z",
+      "updated_at": "2026-03-27T05:30:00Z"
+    }
+  ],
+  "knowledge_facts": [
+    {
+      "id": "knowledge_fact_marketing_policy",
+      "scope": "team",
+      "scope_ref": "team_marketing",
+      "kind": "policy",
+      "statement": "Marketing keeps its AO team on business-hours scheduling so launches can be adjusted during the workday.",
+      "confidence": 95,
+      "source_id": "knowledge_source_marketing_notes",
+      "source_kind": "manual_note",
+      "tags": ["marketing", "policy", "schedule"],
+      "observed_at": "2026-03-27T05:30:00Z",
+      "created_at": "2026-03-27T05:30:00Z"
+    },
+    {
+      "id": "knowledge_fact_aurora_decision",
+      "scope": "team",
+      "scope_ref": "team_aurora_app",
+      "kind": "decision",
+      "statement": "Aurora app runs on a nightly schedule because daytime builds interfere with demos and operator attention.",
+      "confidence": 92,
+      "source_id": "knowledge_source_aurora_runbook",
+      "source_kind": "manual_note",
+      "tags": ["aurora", "decision", "nightly"],
+      "observed_at": "2026-03-27T05:30:00Z",
+      "created_at": "2026-03-27T05:30:00Z"
+    },
+    {
+      "id": "knowledge_fact_platform_risk",
+      "scope": "operational",
+      "scope_ref": null,
+      "kind": "risk",
+      "statement": "Platform should keep the ao-fleet project available for burst-on-backlog scheduling because it handles shared runtime work.",
+      "confidence": 88,
+      "source_id": "knowledge_source_company_policy",
+      "source_kind": "manual_note",
+      "tags": ["platform", "risk", "fleet"],
+      "observed_at": "2026-03-27T05:30:00Z",
+      "created_at": "2026-03-27T05:30:00Z"
+    }
+  ]
+}

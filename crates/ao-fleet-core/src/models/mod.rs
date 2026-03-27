@@ -12,6 +12,7 @@ pub mod new_audit_event;
 pub mod new_project;
 pub mod new_schedule;
 pub mod new_team;
+pub mod observed_daemon_status;
 pub mod project;
 pub mod schedule;
 pub mod schedule_policy_kind;

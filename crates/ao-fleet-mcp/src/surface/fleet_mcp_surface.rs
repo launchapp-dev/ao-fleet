@@ -28,6 +28,8 @@ impl FleetMcpSurface {
             ],
             tools: vec![
                 overview_tool(),
+                daemon_status_tool(),
+                knowledge_search_tool(),
                 knowledge_source_list_tool(),
                 knowledge_source_upsert_tool(),
                 knowledge_document_list_tool(),
@@ -87,6 +89,19 @@ fn overview_tool() -> McpToolDescriptor {
     }
 }
 
+fn daemon_status_tool() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "fleet.daemon.status".to_string(),
+        description: "List persisted daemon status for fleet projects".to_string(),
+        input_schema: schema_with_properties(
+            "Read last observed daemon status by project".to_string(),
+            vec![string_property("team_id", "Optional team filter", false, "team_marketing")],
+            Vec::new(),
+        ),
+        tags: vec!["daemon".to_string(), "read".to_string(), "status".to_string()],
+    }
+}
+
 fn knowledge_source_list_tool() -> McpToolDescriptor {
     McpToolDescriptor {
         name: "fleet.knowledge.source.list".to_string(),
@@ -95,6 +110,54 @@ fn knowledge_source_list_tool() -> McpToolDescriptor {
             "List knowledge sources with optional scope filters".to_string(),
         ),
         tags: vec!["knowledge".to_string(), "read".to_string(), "source".to_string()],
+    }
+}
+
+fn knowledge_search_tool() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "fleet.knowledge.search".to_string(),
+        description: "Search knowledge documents and facts".to_string(),
+        input_schema: schema_with_properties(
+            "Search knowledge by scope, kind, tags, and text".to_string(),
+            vec![
+                enum_property(
+                    "scope",
+                    "Optional knowledge scope filter",
+                    false,
+                    vec!["global", "team", "project", "operational"],
+                    "team",
+                ),
+                string_property(
+                    "scope_ref",
+                    "Optional team or project identifier",
+                    false,
+                    "team_marketing",
+                ),
+                array_property(
+                    "document_kinds",
+                    "Optional document kind filters",
+                    false,
+                    serde_json::json!(["runbook"]),
+                ),
+                array_property(
+                    "fact_kinds",
+                    "Optional fact kind filters",
+                    false,
+                    serde_json::json!(["policy"]),
+                ),
+                array_property(
+                    "source_kinds",
+                    "Optional source kind filters",
+                    false,
+                    serde_json::json!(["manual_note"]),
+                ),
+                array_property("tags", "Optional tag filters", false, serde_json::json!(["ops"])),
+                string_property("text", "Optional case-insensitive text filter", false, "restart"),
+                integer_property("limit", "Maximum records to evaluate per record type", false, 50),
+            ],
+            Vec::new(),
+        ),
+        tags: vec!["knowledge".to_string(), "read".to_string(), "search".to_string()],
     }
 }
 
@@ -688,6 +751,8 @@ mod tests {
             names,
             vec![
                 "fleet.overview",
+                "fleet.daemon.status",
+                "fleet.knowledge.search",
                 "fleet.knowledge.source.list",
                 "fleet.knowledge.source.upsert",
                 "fleet.knowledge.document.list",

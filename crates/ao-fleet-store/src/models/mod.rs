@@ -1,3 +1,4 @@
+pub mod fleet_daemon_status;
 pub mod fleet_overview;
 pub mod fleet_overview_query;
 pub mod fleet_overview_summary;

@@ -1,11 +1,13 @@
 use ao_fleet_core::{KnowledgeDocument, KnowledgeFact, KnowledgeSource, Project, Schedule, Team};
-use ao_fleet_store::{FleetOverview, FleetOverviewQuery};
+use ao_fleet_store::{FleetDaemonStatus, FleetOverview, FleetOverviewQuery};
 
 use crate::error::fleet_mcp_error::FleetMcpError;
 use crate::inputs::daemon_reconcile_input::DaemonReconcileInput;
+use crate::inputs::daemon_status_input::DaemonStatusInput;
 use crate::inputs::knowledge_document_create_input::KnowledgeDocumentCreateInput;
 use crate::inputs::knowledge_fact_create_input::KnowledgeFactCreateInput;
 use crate::inputs::knowledge_record_list_input::KnowledgeRecordListInput;
+use crate::inputs::knowledge_search_input::KnowledgeSearchInput;
 use crate::inputs::knowledge_source_upsert_input::KnowledgeSourceUpsertInput;
 use crate::inputs::project_create_input::ProjectCreateInput;
 use crate::inputs::project_list_input::ProjectListInput;
@@ -14,9 +16,15 @@ use crate::inputs::schedule_list_input::ScheduleListInput;
 use crate::inputs::team_create_input::TeamCreateInput;
 use crate::inputs::team_list_input::TeamListInput;
 use crate::results::daemon_reconcile_result::DaemonReconcileResult;
+use ao_fleet_knowledge::KnowledgeSearchResult;
 
 pub trait FleetMcpApi {
     fn fleet_overview(&self, input: FleetOverviewQuery) -> Result<FleetOverview, FleetMcpError>;
+
+    fn daemon_statuses(
+        &self,
+        input: DaemonStatusInput,
+    ) -> Result<Vec<FleetDaemonStatus>, FleetMcpError>;
 
     fn list_teams(&self, input: TeamListInput) -> Result<Vec<Team>, FleetMcpError>;
 
@@ -44,6 +52,11 @@ pub trait FleetMcpApi {
         &self,
         input: KnowledgeRecordListInput,
     ) -> Result<Vec<KnowledgeFact>, FleetMcpError>;
+
+    fn search_knowledge(
+        &self,
+        input: KnowledgeSearchInput,
+    ) -> Result<KnowledgeSearchResult, FleetMcpError>;
 
     fn upsert_knowledge_source(
         &self,

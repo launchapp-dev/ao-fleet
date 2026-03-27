@@ -110,6 +110,12 @@ impl<H: FleetMcpApi> FleetMcpServer<H> {
             "fleet.overview" => self.to_tool_result(
                 self.handlers.fleet_overview(parse_optional_input(call.arguments)?)?,
             ),
+            "fleet.daemon.status" => self.to_tool_result(
+                self.handlers.daemon_statuses(parse_optional_input(call.arguments)?)?,
+            ),
+            "fleet.knowledge.search" => self.to_tool_result(
+                self.handlers.search_knowledge(parse_optional_input(call.arguments)?)?,
+            ),
             "fleet.knowledge.source.list" => self.to_tool_result(
                 self.handlers.list_knowledge_sources(parse_optional_input(call.arguments)?)?,
             ),
@@ -297,6 +303,7 @@ mod tests {
     };
     use chrono::Utc;
 
+    use crate::FleetDaemonStatus;
     use crate::FleetOverview;
     use crate::FleetOverviewQuery;
     use crate::FleetOverviewSummary;
@@ -308,9 +315,11 @@ mod tests {
     use crate::api::fleet_mcp_api::FleetMcpApi;
     use crate::error::fleet_mcp_error::FleetMcpError;
     use crate::inputs::daemon_reconcile_input::DaemonReconcileInput;
+    use crate::inputs::daemon_status_input::DaemonStatusInput;
     use crate::inputs::knowledge_document_create_input::KnowledgeDocumentCreateInput;
     use crate::inputs::knowledge_fact_create_input::KnowledgeFactCreateInput;
     use crate::inputs::knowledge_record_list_input::KnowledgeRecordListInput;
+    use crate::inputs::knowledge_search_input::KnowledgeSearchInput;
     use crate::inputs::knowledge_source_upsert_input::KnowledgeSourceUpsertInput;
     use crate::inputs::project_create_input::ProjectCreateInput;
     use crate::inputs::project_list_input::ProjectListInput;
@@ -320,6 +329,7 @@ mod tests {
     use crate::inputs::team_list_input::TeamListInput;
     use crate::results::daemon_reconcile_decision::DaemonReconcileDecision;
     use crate::results::daemon_reconcile_result::DaemonReconcileResult;
+    use ao_fleet_knowledge::KnowledgeSearchResult;
 
     use super::FleetMcpServer;
 
@@ -415,6 +425,25 @@ mod tests {
             })
         }
 
+        fn daemon_statuses(
+            &self,
+            _input: DaemonStatusInput,
+        ) -> Result<Vec<FleetDaemonStatus>, FleetMcpError> {
+            self.calls.borrow_mut().push("daemon_statuses".to_string());
+            Ok(vec![FleetDaemonStatus {
+                team_id: "team-1".to_string(),
+                team_slug: "marketing".to_string(),
+                project_id: "project-1".to_string(),
+                project_slug: "launch-site".to_string(),
+                project_root: "/tmp/launch-site".to_string(),
+                desired_state: DaemonDesiredState::Running,
+                observed_state: Some(DaemonDesiredState::Paused),
+                checked_at: Some(Utc::now()),
+                source: Some("ao-cli".to_string()),
+                details: Some(serde_json::json!({"raw_state": "paused"})),
+            }])
+        }
+
         fn list_teams(&self, _input: TeamListInput) -> Result<Vec<Team>, FleetMcpError> {
             self.calls.borrow_mut().push("list_teams".to_string());
             Ok(vec![Team {
@@ -461,6 +490,42 @@ mod tests {
                 created_at: Utc::now(),
                 updated_at: Utc::now(),
             }])
+        }
+
+        fn search_knowledge(
+            &self,
+            _input: KnowledgeSearchInput,
+        ) -> Result<KnowledgeSearchResult, FleetMcpError> {
+            self.calls.borrow_mut().push("search_knowledge".to_string());
+            Ok(KnowledgeSearchResult {
+                documents: vec![KnowledgeDocument {
+                    id: "document-1".to_string(),
+                    scope: KnowledgeScope::Team,
+                    scope_ref: Some("team-1".to_string()),
+                    kind: KnowledgeDocumentKind::Runbook,
+                    title: "On-call runbook".to_string(),
+                    summary: "Restart steps".to_string(),
+                    body: "Restart the daemon if health stays red".to_string(),
+                    source_id: Some("source-1".to_string()),
+                    source_kind: Some(KnowledgeSourceKind::ManualNote),
+                    tags: vec!["ops".to_string()],
+                    created_at: Utc::now(),
+                    updated_at: Utc::now(),
+                }],
+                facts: vec![KnowledgeFact {
+                    id: "fact-1".to_string(),
+                    scope: KnowledgeScope::Team,
+                    scope_ref: Some("team-1".to_string()),
+                    kind: KnowledgeFactKind::Policy,
+                    statement: "Marketing owns launch messaging".to_string(),
+                    confidence: 92,
+                    source_id: Some("source-1".to_string()),
+                    source_kind: Some(KnowledgeSourceKind::ManualNote),
+                    tags: vec!["ops".to_string()],
+                    observed_at: Utc::now(),
+                    created_at: Utc::now(),
+                }],
+            })
         }
 
         fn list_knowledge_documents(
@@ -685,6 +750,23 @@ mod tests {
     }
 
     #[test]
+    fn tools_call_routes_daemon_status() {
+        let server = FleetMcpServer::new(MockHandlers::default());
+        let response = server
+            .handle_message(
+                r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"fleet.daemon.status","arguments":{"team_id":"team-1"}}}"#,
+            )
+            .expect("message handled")
+            .expect("response returned");
+
+        let payload: serde_json::Value = serde_json::from_str(&response).expect("valid response");
+        let text = payload["result"]["content"][0]["text"].as_str().expect("text content");
+
+        assert!(text.contains("\"launch-site\""), "response: {response}");
+        assert!(text.contains("\"paused\""), "response: {response}");
+    }
+
+    #[test]
     fn tools_call_routes_knowledge_documents() {
         let server = FleetMcpServer::new(MockHandlers::default());
         let response = server
@@ -699,6 +781,23 @@ mod tests {
 
         assert!(text.contains("\"On-call runbook\""), "response: {response}");
         assert!(text.contains("\"scope_ref\": \"team-1\""), "response: {response}");
+    }
+
+    #[test]
+    fn tools_call_routes_knowledge_search() {
+        let server = FleetMcpServer::new(MockHandlers::default());
+        let response = server
+            .handle_message(
+                r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"fleet.knowledge.search","arguments":{"scope":"team","scope_ref":"team-1","text":"restart","tags":["ops"],"limit":10}}}"#,
+            )
+            .expect("message handled")
+            .expect("response returned");
+
+        let payload: serde_json::Value = serde_json::from_str(&response).expect("valid response");
+        let text = payload["result"]["content"][0]["text"].as_str().expect("text content");
+
+        assert!(text.contains("\"documents\""), "response: {response}");
+        assert!(text.contains("\"facts\""), "response: {response}");
     }
 
     #[test]
@@ -727,8 +826,10 @@ mod tests {
             .expect("response returned");
 
         assert!(response.contains("\"fleet.team.list\""));
+        assert!(response.contains("\"fleet.daemon.status\""));
         assert!(response.contains("\"fleet.daemon.reconcile\""));
         assert!(response.contains("\"fleet.overview\""));
+        assert!(response.contains("\"fleet.knowledge.search\""));
         assert!(response.contains("\"fleet.knowledge.document.list\""));
         assert!(response.contains("\"fleet.knowledge.source.upsert\""));
     }

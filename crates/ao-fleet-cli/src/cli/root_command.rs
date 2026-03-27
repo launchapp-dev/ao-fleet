@@ -1,12 +1,16 @@
 use clap::{Parser, Subcommand};
 
 use crate::cli::handlers::audit_list_command::AuditListCommand;
+use crate::cli::handlers::config_snapshot_export_command::ConfigSnapshotExportCommand;
+use crate::cli::handlers::config_snapshot_import_command::ConfigSnapshotImportCommand;
 use crate::cli::handlers::daemon_reconcile_command::DaemonReconcileCommand;
+use crate::cli::handlers::daemon_status_command::DaemonStatusCommand;
 use crate::cli::handlers::db_init_command::DbInitCommand;
 use crate::cli::handlers::knowledge_document_create_command::KnowledgeDocumentCreateCommand;
 use crate::cli::handlers::knowledge_document_list_command::KnowledgeDocumentListCommand;
 use crate::cli::handlers::knowledge_fact_create_command::KnowledgeFactCreateCommand;
 use crate::cli::handlers::knowledge_fact_list_command::KnowledgeFactListCommand;
+use crate::cli::handlers::knowledge_search_command::KnowledgeSearchCommand;
 use crate::cli::handlers::knowledge_source_list_command::KnowledgeSourceListCommand;
 use crate::cli::handlers::knowledge_source_upsert_command::KnowledgeSourceUpsertCommand;
 use crate::cli::handlers::mcp_list_command::McpListCommand;
@@ -42,6 +46,8 @@ pub struct RootCommand {
 pub enum CommandGroup {
     DbInit(DbInitCommand),
     AuditList(AuditListCommand),
+    ConfigSnapshotExport(ConfigSnapshotExportCommand),
+    ConfigSnapshotImport(ConfigSnapshotImportCommand),
     TeamCreate(TeamCreateCommand),
     TeamGet(TeamGetCommand),
     TeamList(TeamListCommand),
@@ -63,6 +69,8 @@ pub enum CommandGroup {
     KnowledgeDocumentList(KnowledgeDocumentListCommand),
     KnowledgeFactCreate(KnowledgeFactCreateCommand),
     KnowledgeFactList(KnowledgeFactListCommand),
+    KnowledgeSearch(KnowledgeSearchCommand),
+    DaemonStatus(DaemonStatusCommand),
     DaemonReconcile(DaemonReconcileCommand),
     McpList(McpListCommand),
     McpServe(McpServeCommand),

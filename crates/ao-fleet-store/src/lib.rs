@@ -4,6 +4,7 @@ mod models;
 
 pub use errors::store_error::StoreError;
 pub use fleet_store::FleetStore;
+pub use models::fleet_daemon_status::FleetDaemonStatus;
 pub use models::fleet_overview::FleetOverview;
 pub use models::fleet_overview_query::FleetOverviewQuery;
 pub use models::fleet_overview_summary::FleetOverviewSummary;

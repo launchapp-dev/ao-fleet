@@ -4,7 +4,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 
 use ao_fleet_ao::{AoDaemonClient, DaemonCommandResult, DaemonStartOptions, DaemonState};
-use ao_fleet_core::DaemonDesiredState;
+use ao_fleet_core::{DaemonDesiredState, ObservedDaemonStatus};
 use ao_fleet_scheduler::schedule_evaluator::ScheduleEvaluator;
 use ao_fleet_store::FleetStore;
 
@@ -52,13 +52,37 @@ pub fn daemon_reconcile(db_path: &str, command: DaemonReconcileCommand) -> Resul
         } else {
             None
         };
+        let stored_state = if command.apply {
+            ao.daemon_status(&project.ao_project_root)
+                .ok()
+                .or_else(|| status_to_daemon_state(&ao, &project.ao_project_root))
+                .or(observed_state.clone())
+        } else {
+            observed_state.clone()
+        };
+
+        if let Some(stored_state) = stored_state.clone() {
+            store.upsert_observed_daemon_status(ObservedDaemonStatus {
+                project_id: project.id.clone(),
+                team_id: project.team_id.clone(),
+                observed_state: daemon_state_to_desired_state(stored_state.clone()),
+                source: "daemon_reconcile".to_string(),
+                checked_at: Utc::now(),
+                details: serde_json::json!({
+                    "project_root": project.ao_project_root,
+                    "raw_state": String::from(stored_state),
+                    "action": action,
+                    "apply": command.apply,
+                }),
+            })?;
+        }
 
         results.push(DaemonReconcileResult {
             team_id: project.team_id,
             project_id: project.id,
             project_root: project.ao_project_root,
             desired_state: team_state.desired_state,
-            observed_state,
+            observed_state: stored_state,
             backlog_count: team_state.backlog_count,
             schedule_ids: team_state.schedule_ids.clone(),
             action,
@@ -126,6 +150,16 @@ fn planned_action(
             Some("stop".to_string())
         }
         (DaemonDesiredState::Stopped, _) => None,
+    }
+}
+
+fn daemon_state_to_desired_state(state: DaemonState) -> DaemonDesiredState {
+    match state {
+        DaemonState::Running => DaemonDesiredState::Running,
+        DaemonState::Paused => DaemonDesiredState::Paused,
+        DaemonState::Stopped | DaemonState::Crashed | DaemonState::Unknown(_) => {
+            DaemonDesiredState::Stopped
+        }
     }
 }
 

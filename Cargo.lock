@@ -98,6 +98,7 @@ dependencies = [
  "anyhow",
  "ao-fleet-ao",
  "ao-fleet-core",
+ "ao-fleet-knowledge",
  "ao-fleet-mcp",
  "ao-fleet-scheduler",
  "ao-fleet-store",
@@ -135,6 +136,7 @@ name = "ao-fleet-mcp"
 version = "0.1.0"
 dependencies = [
  "ao-fleet-core",
+ "ao-fleet-knowledge",
  "ao-fleet-scheduler",
  "ao-fleet-store",
  "chrono",

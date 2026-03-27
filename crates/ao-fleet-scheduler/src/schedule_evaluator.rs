@@ -97,6 +97,10 @@ mod tests {
         }
     }
 
+    fn business_schedule_in_timezone(timezone: &str) -> Schedule {
+        Schedule { timezone: timezone.to_string(), ..business_schedule() }
+    }
+
     fn nightly_schedule() -> Schedule {
         Schedule {
             id: "schedule-2".to_string(),
@@ -166,6 +170,31 @@ mod tests {
     }
 
     #[test]
+    fn business_hours_uses_local_timezone_boundaries() {
+        let schedule = business_schedule_in_timezone("America/Los_Angeles");
+
+        let running = ScheduleEvaluator::evaluate(
+            &schedule,
+            Utc.with_ymd_and_hms(2025, 3, 3, 18, 30, 0).unwrap(),
+            0,
+        );
+        let paused_before_open = ScheduleEvaluator::evaluate(
+            &schedule,
+            Utc.with_ymd_and_hms(2025, 3, 3, 16, 30, 0).unwrap(),
+            0,
+        );
+        let paused_after_close = ScheduleEvaluator::evaluate(
+            &schedule,
+            Utc.with_ymd_and_hms(2025, 3, 4, 1, 30, 0).unwrap(),
+            0,
+        );
+
+        assert_eq!(running, DaemonDesiredState::Running);
+        assert_eq!(paused_before_open, DaemonDesiredState::Paused);
+        assert_eq!(paused_after_close, DaemonDesiredState::Paused);
+    }
+
+    #[test]
     fn nightly_supports_wraparound_window() {
         let schedule = nightly_schedule();
 
@@ -191,6 +220,25 @@ mod tests {
     }
 
     #[test]
+    fn nightly_window_respects_exact_boundaries() {
+        let schedule = nightly_schedule();
+
+        let starts_running = ScheduleEvaluator::evaluate(
+            &schedule,
+            Utc.with_ymd_and_hms(2025, 3, 3, 22, 0, 0).unwrap(),
+            0,
+        );
+        let stops_running = ScheduleEvaluator::evaluate(
+            &schedule,
+            Utc.with_ymd_and_hms(2025, 3, 4, 6, 0, 0).unwrap(),
+            0,
+        );
+
+        assert_eq!(starts_running, DaemonDesiredState::Running);
+        assert_eq!(stops_running, DaemonDesiredState::Paused);
+    }
+
+    #[test]
     fn burst_on_backlog_runs_only_when_backlog_exists() {
         let schedule =
             Schedule { policy_kind: SchedulePolicyKind::BurstOnBacklog, ..business_schedule() };
@@ -207,6 +255,20 @@ mod tests {
         );
 
         assert_eq!(idle, DaemonDesiredState::Paused);
+        assert_eq!(burst, DaemonDesiredState::Running);
+    }
+
+    #[test]
+    fn burst_on_backlog_ignores_schedule_window_when_backlog_exists() {
+        let schedule =
+            Schedule { policy_kind: SchedulePolicyKind::BurstOnBacklog, ..business_schedule() };
+
+        let burst = ScheduleEvaluator::evaluate(
+            &schedule,
+            Utc.with_ymd_and_hms(2025, 3, 3, 2, 0, 0).unwrap(),
+            3,
+        );
+
         assert_eq!(burst, DaemonDesiredState::Running);
     }
 }

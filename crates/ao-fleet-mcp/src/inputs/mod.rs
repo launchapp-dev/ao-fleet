@@ -1,7 +1,9 @@
 pub mod daemon_reconcile_input;
+pub mod daemon_status_input;
 pub mod knowledge_document_create_input;
 pub mod knowledge_fact_create_input;
 pub mod knowledge_record_list_input;
+pub mod knowledge_search_input;
 pub mod knowledge_source_upsert_input;
 pub mod project_create_input;
 pub mod project_list_input;

@@ -16,6 +16,7 @@ pub use models::new_audit_event::NewAuditEvent;
 pub use models::new_project::NewProject;
 pub use models::new_schedule::NewSchedule;
 pub use models::new_team::NewTeam;
+pub use models::observed_daemon_status::ObservedDaemonStatus;
 pub use models::project::Project;
 pub use models::schedule::Schedule;
 pub use models::schedule_policy_kind::SchedulePolicyKind;
