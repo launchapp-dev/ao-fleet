@@ -1,0 +1,8 @@
+workflows:
+  - id: company-backlog-workflow
+    name: Company Backlog Workflow
+    description: Balance company backlog across AO teams and convert priorities into execution.
+    phases:
+      - workflow_ref: ao.task/triage
+      - requirements
+      - workflow_ref: ao.task/standard

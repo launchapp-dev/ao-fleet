@@ -1,0 +1,8 @@
+workflows:
+  - id: company-incident-workflow
+    name: Company Incident Workflow
+    description: Founder incident loop for triage, mitigation, and follow-up.
+    phases:
+      - workflow_ref: ao.task/triage
+      - workflow_ref: ao.task/quick-fix
+      - requirements

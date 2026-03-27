@@ -1,0 +1,8 @@
+workflows:
+  - id: company-planning-workflow
+    name: Company Planning Workflow
+    description: Founder planning loop for priorities, schedules, and backlog balancing.
+    phases:
+      - workflow_ref: ao.task/triage
+      - requirements
+      - workflow_ref: ao.task/standard

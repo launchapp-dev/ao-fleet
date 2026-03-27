@@ -1,0 +1,10 @@
+workflows:
+  - id: company-launch-workflow
+    name: Company Launch Workflow
+    description: Coordinate launch work across product, engineering, marketing, and support teams.
+    phases:
+      - workflow_ref: ao.task/triage
+      - requirements
+      - push-branch
+      - create-pr
+      - auto-merge-pr
