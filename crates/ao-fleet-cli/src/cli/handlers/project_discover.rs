@@ -53,6 +53,7 @@ pub fn project_discover(db_path: &str, command: ProjectDiscoverCommand) -> Resul
             ao_project_root: candidate.ao_project_root,
             slug_hint: candidate.slug_hint,
             default_branch: candidate.default_branch,
+            remote_url: candidate.remote_url,
             has_git: candidate.has_git,
             has_ao: candidate.has_ao,
             existing_project_id,
@@ -94,6 +95,7 @@ struct DiscoveredProject {
     ao_project_root: String,
     slug_hint: String,
     default_branch: String,
+    remote_url: Option<String>,
     has_git: bool,
     has_ao: bool,
     existing_project_id: Option<String>,
@@ -109,6 +111,7 @@ struct DiscoveryCandidate {
     normalized_ao_project_root: String,
     slug_hint: String,
     default_branch: String,
+    remote_url: Option<String>,
     has_git: bool,
     has_ao: bool,
 }
@@ -230,6 +233,7 @@ fn classify_project_root(
             .unwrap_or("project")
             .to_string(),
         default_branch: discover_default_branch(path).unwrap_or_else(|| "main".to_string()),
+        remote_url: discover_remote_url(path),
         has_git,
         has_ao,
     }))
@@ -252,6 +256,45 @@ fn resolve_git_dir(path: &Path) -> Option<PathBuf> {
     let raw_path = git_file.trim().strip_prefix("gitdir: ")?;
     let git_path = Path::new(raw_path);
     Some(if git_path.is_absolute() { git_path.to_path_buf() } else { path.join(git_path) })
+}
+
+fn discover_remote_url(path: &Path) -> Option<String> {
+    let git_dir = resolve_git_dir(path)?;
+    let config = fs::read_to_string(git_dir.join("config")).ok()?;
+    parse_remote_url(&config)
+}
+
+fn parse_remote_url(config: &str) -> Option<String> {
+    let mut current_remote = None::<String>;
+    let mut first_remote_url = None::<String>;
+
+    for line in config.lines() {
+        let trimmed = line.trim();
+        if let Some(name) = parse_remote_section_name(trimmed) {
+            current_remote = Some(name);
+            continue;
+        }
+
+        if !trimmed.starts_with("url = ") {
+            continue;
+        }
+
+        let url = trimmed.strip_prefix("url = ")?.trim().to_string();
+        if current_remote.as_deref() == Some("origin") {
+            return Some(url);
+        }
+
+        if first_remote_url.is_none() {
+            first_remote_url = Some(url);
+        }
+    }
+
+    first_remote_url
+}
+
+fn parse_remote_section_name(line: &str) -> Option<String> {
+    let name = line.strip_prefix("[remote \"")?.strip_suffix("\"]")?;
+    Some(name.to_string())
 }
 
 fn read_subdirectories(path: &Path) -> Result<Vec<PathBuf>> {
@@ -395,6 +438,7 @@ mod tests {
         assert!(
             discovered.iter().any(|project| !project.has_ao && project.default_branch == "trunk")
         );
+        assert!(discovered.iter().all(|project| project.remote_url.is_none()));
     }
 
     #[test]
@@ -429,5 +473,33 @@ mod tests {
 
         assert_eq!(discovered.len(), 1);
         assert_eq!(discovered[0].slug_hint, "shell");
+    }
+
+    #[test]
+    fn parse_remote_url_prefers_origin() {
+        let config = r#"
+[remote "upstream"]
+    url = https://github.com/example/upstream.git
+[remote "origin"]
+    url = git@github.com:example/origin.git
+"#;
+
+        let remote_url = parse_remote_url(config);
+
+        assert_eq!(remote_url.as_deref(), Some("git@github.com:example/origin.git"));
+    }
+
+    #[test]
+    fn parse_remote_url_falls_back_to_first_remote() {
+        let config = r#"
+[core]
+    bare = false
+[remote "upstream"]
+    url = https://github.com/example/upstream.git
+"#;
+
+        let remote_url = parse_remote_url(config);
+
+        assert_eq!(remote_url.as_deref(), Some("https://github.com/example/upstream.git"));
     }
 }
