@@ -7,6 +7,7 @@ use ao_fleet_core::{
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct KnowledgeQuery {
     pub scope: Option<KnowledgeScope>,
+    pub scope_ref: Option<String>,
     pub document_kinds: Vec<KnowledgeDocumentKind>,
     pub fact_kinds: Vec<KnowledgeFactKind>,
     pub source_kinds: Vec<KnowledgeSourceKind>,
@@ -19,6 +20,7 @@ impl KnowledgeQuery {
     pub fn new() -> Self {
         Self {
             scope: None,
+            scope_ref: None,
             document_kinds: Vec::new(),
             fact_kinds: Vec::new(),
             source_kinds: Vec::new(),

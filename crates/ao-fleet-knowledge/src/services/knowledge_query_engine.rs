@@ -10,6 +10,7 @@ pub struct KnowledgeQueryEngine;
 impl KnowledgeQueryEngine {
     pub fn matches_document(&self, query: &KnowledgeQuery, document: &KnowledgeDocument) -> bool {
         self.matches_scope(query, &document.scope)
+            && self.matches_scope_ref(query.scope_ref.as_deref(), document.scope_ref.as_deref())
             && self.matches_document_kind(query, &document.kind)
             && self.matches_source_kind(query, document.source_kind.as_ref())
             && self.matches_text(query, &document.title, &document.summary, &document.body)
@@ -18,6 +19,7 @@ impl KnowledgeQueryEngine {
 
     pub fn matches_fact(&self, query: &KnowledgeQuery, fact: &KnowledgeFact) -> bool {
         self.matches_scope(query, &fact.scope)
+            && self.matches_scope_ref(query.scope_ref.as_deref(), fact.scope_ref.as_deref())
             && self.matches_fact_kind(query, &fact.kind)
             && self.matches_source_kind(query, fact.source_kind.as_ref())
             && self.matches_text(query, &fact.statement, "", "")
@@ -26,6 +28,10 @@ impl KnowledgeQueryEngine {
 
     fn matches_scope(&self, query: &KnowledgeQuery, scope: &ao_fleet_core::KnowledgeScope) -> bool {
         query.scope.as_ref().map_or(true, |expected| expected == scope)
+    }
+
+    fn matches_scope_ref(&self, expected: Option<&str>, actual: Option<&str>) -> bool {
+        expected.is_none() || expected == actual
     }
 
     fn matches_document_kind(
@@ -88,6 +94,7 @@ mod tests {
         let engine = KnowledgeQueryEngine;
         let query = KnowledgeQuery {
             scope: Some(KnowledgeScope::Global),
+            scope_ref: None,
             document_kinds: vec![KnowledgeDocumentKind::Brief],
             fact_kinds: Vec::new(),
             source_kinds: Vec::new(),
@@ -98,6 +105,7 @@ mod tests {
         let document = KnowledgeDocument {
             id: "doc-1".to_string(),
             scope: KnowledgeScope::Global,
+            scope_ref: None,
             kind: KnowledgeDocumentKind::Brief,
             title: "Fleet knowledge base".to_string(),
             summary: "Shared memory for the company".to_string(),
@@ -117,6 +125,7 @@ mod tests {
         let engine = KnowledgeQueryEngine;
         let query = KnowledgeQuery {
             scope: Some(KnowledgeScope::Global),
+            scope_ref: None,
             document_kinds: Vec::new(),
             fact_kinds: vec![KnowledgeFactKind::Policy],
             source_kinds: Vec::new(),
@@ -127,6 +136,7 @@ mod tests {
         let fact = KnowledgeFact {
             id: "fact-1".to_string(),
             scope: KnowledgeScope::Global,
+            scope_ref: None,
             kind: KnowledgeFactKind::Policy,
             statement: "The company owns the fleet layer".to_string(),
             confidence: 90,

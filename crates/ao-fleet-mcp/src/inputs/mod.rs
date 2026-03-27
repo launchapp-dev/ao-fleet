@@ -1,4 +1,5 @@
 pub mod daemon_reconcile_input;
+pub mod knowledge_record_list_input;
 pub mod project_create_input;
 pub mod project_list_input;
 pub mod schedule_create_input;

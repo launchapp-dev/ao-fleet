@@ -9,6 +9,7 @@ use crate::models::knowledge_source_kind::KnowledgeSourceKind;
 pub struct KnowledgeDocument {
     pub id: String,
     pub scope: KnowledgeScope,
+    pub scope_ref: Option<String>,
     pub kind: KnowledgeDocumentKind,
     pub title: String,
     pub summary: String,

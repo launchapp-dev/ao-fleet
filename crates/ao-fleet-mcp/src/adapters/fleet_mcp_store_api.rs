@@ -1,15 +1,17 @@
 use std::collections::BTreeMap;
 
 use ao_fleet_core::{
-    DaemonDesiredState, NewProject, NewSchedule, NewTeam, Project, Schedule, Team,
+    DaemonDesiredState, KnowledgeDocument, KnowledgeFact, KnowledgeSource, NewProject, NewSchedule,
+    NewTeam, Project, Schedule, Team,
 };
 use ao_fleet_scheduler::schedule_evaluator::ScheduleEvaluator;
-use ao_fleet_store::{FleetOverview, FleetOverviewQuery, FleetStore};
+use ao_fleet_store::{FleetOverview, FleetOverviewQuery, FleetStore, KnowledgeRecordQuery};
 use chrono::Utc;
 
 use crate::api::fleet_mcp_api::FleetMcpApi;
 use crate::error::fleet_mcp_error::FleetMcpError;
 use crate::inputs::daemon_reconcile_input::DaemonReconcileInput;
+use crate::inputs::knowledge_record_list_input::KnowledgeRecordListInput;
 use crate::inputs::project_create_input::ProjectCreateInput;
 use crate::inputs::project_list_input::ProjectListInput;
 use crate::inputs::schedule_create_input::ScheduleCreateInput;
@@ -93,6 +95,27 @@ impl FleetMcpApi for FleetMcpStoreApi {
             .map_err(Into::into)
     }
 
+    fn list_knowledge_sources(
+        &self,
+        input: KnowledgeRecordListInput,
+    ) -> Result<Vec<KnowledgeSource>, FleetMcpError> {
+        self.store.list_knowledge_sources(record_query_from_input(input)).map_err(Into::into)
+    }
+
+    fn list_knowledge_documents(
+        &self,
+        input: KnowledgeRecordListInput,
+    ) -> Result<Vec<KnowledgeDocument>, FleetMcpError> {
+        self.store.list_knowledge_documents(record_query_from_input(input)).map_err(Into::into)
+    }
+
+    fn list_knowledge_facts(
+        &self,
+        input: KnowledgeRecordListInput,
+    ) -> Result<Vec<KnowledgeFact>, FleetMcpError> {
+        self.store.list_knowledge_facts(record_query_from_input(input)).map_err(Into::into)
+    }
+
     fn reconcile_daemons(
         &self,
         input: DaemonReconcileInput,
@@ -125,6 +148,10 @@ impl FleetMcpApi for FleetMcpStoreApi {
             decisions: per_team.into_values().collect(),
         })
     }
+}
+
+fn record_query_from_input(input: KnowledgeRecordListInput) -> KnowledgeRecordQuery {
+    KnowledgeRecordQuery { scope: input.scope, scope_ref: input.scope_ref, limit: input.limit }
 }
 
 fn merge_desired_state(

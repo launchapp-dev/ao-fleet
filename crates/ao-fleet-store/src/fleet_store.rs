@@ -4,12 +4,15 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use ao_fleet_core::{
-    AuditEvent, DaemonDesiredState, NewAuditEvent, NewProject, NewSchedule, NewTeam, Project,
-    Schedule, SchedulePolicyKind, Team, WeekdayWindow,
+    AuditEvent, DaemonDesiredState, KnowledgeDocument, KnowledgeFact, KnowledgeScope,
+    KnowledgeSource, NewAuditEvent, NewProject, NewSchedule, NewTeam, Project, Schedule,
+    SchedulePolicyKind, Team, WeekdayWindow,
 };
 use ao_fleet_scheduler::schedule_evaluator::ScheduleEvaluator;
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Row, params, types::Type};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use uuid::Uuid;
 
 use crate::errors::store_error::StoreError;
@@ -21,11 +24,13 @@ use crate::models::fleet_reconcile_preview::FleetReconcilePreview;
 use crate::models::fleet_reconcile_preview_item::FleetReconcilePreviewItem;
 use crate::models::fleet_team_overview::FleetTeamOverview;
 use crate::models::fleet_team_summary::FleetTeamSummary;
+use crate::models::knowledge_record_query::KnowledgeRecordQuery;
 
 const MIGRATION_SQL: &[&str] = &[
     include_str!("../sql/migrations/001_enable_foreign_keys.sql"),
     include_str!("../sql/migrations/002_create_schema.sql"),
     include_str!("../sql/migrations/003_create_audit_events.sql"),
+    include_str!("../sql/migrations/004_create_knowledge_tables.sql"),
 ];
 
 #[derive(Debug, Clone)]
@@ -80,6 +85,265 @@ impl FleetStore {
         let limit = limit.unwrap_or(100);
         let mut stmt = conn.prepare(include_str!("../sql/audit_event/list.sql"))?;
         let rows = stmt.query_map(params![team_id, limit as i64], audit_event_from_row)?;
+        collect_rows(rows)
+    }
+
+    pub fn upsert_knowledge_source(
+        &self,
+        mut source: KnowledgeSource,
+    ) -> Result<KnowledgeSource, StoreError> {
+        validate_knowledge_source(&source)?;
+        if source.id.trim().is_empty() {
+            source.id = new_id("knowledge_source");
+        }
+
+        let mut conn = self.connection()?;
+        let tx = conn.transaction()?;
+        let scope = enum_to_text(&source.scope)?;
+        let kind = enum_to_text(&source.kind)?;
+        let sync_state = enum_to_text(&source.sync_state)?;
+
+        tx.execute(
+            include_str!("../sql/knowledge_source/upsert.sql"),
+            params![
+                source.id,
+                kind,
+                source.label,
+                source.uri,
+                scope,
+                source.scope_ref,
+                sync_state,
+                source.last_synced_at.map(|value| value.to_rfc3339()),
+                source.metadata.to_string(),
+                source.created_at.to_rfc3339(),
+                source.updated_at.to_rfc3339(),
+            ],
+        )?;
+
+        record_audit_event(
+            &tx,
+            NewAuditEvent {
+                team_id: knowledge_team_id(&source.scope, source.scope_ref.as_deref()),
+                entity_type: "knowledge_source".to_string(),
+                entity_id: source.id.clone(),
+                action: "upserted".to_string(),
+                actor_type: "system".to_string(),
+                actor_id: None,
+                summary: format!("Upserted knowledge source {}", source.label),
+                details: serde_json::json!({
+                    "kind": enum_to_text(&source.kind)?,
+                    "scope": enum_to_text(&source.scope)?,
+                    "scope_ref": source.scope_ref,
+                    "sync_state": enum_to_text(&source.sync_state)?,
+                }),
+            },
+        )?;
+        tx.commit()?;
+
+        Ok(source)
+    }
+
+    pub fn get_knowledge_source(&self, id: &str) -> Result<Option<KnowledgeSource>, StoreError> {
+        let conn = self.connection()?;
+        conn.query_row(
+            include_str!("../sql/knowledge_source/get.sql"),
+            params![id],
+            knowledge_source_from_row,
+        )
+        .optional()
+        .map_err(Into::into)
+    }
+
+    pub fn list_knowledge_sources(
+        &self,
+        query: KnowledgeRecordQuery,
+    ) -> Result<Vec<KnowledgeSource>, StoreError> {
+        let conn = self.connection()?;
+        let mut stmt = conn.prepare(include_str!("../sql/knowledge_source/list.sql"))?;
+        let scope = query.scope.as_ref().map(enum_to_text).transpose()?;
+        let rows = stmt.query_map(
+            params![scope, query.scope_ref, query.limit as i64],
+            knowledge_source_from_row,
+        )?;
+        collect_rows(rows)
+    }
+
+    pub fn create_knowledge_document(
+        &self,
+        mut document: KnowledgeDocument,
+    ) -> Result<KnowledgeDocument, StoreError> {
+        validate_knowledge_document(&document)?;
+        if document.id.trim().is_empty() {
+            document.id = new_id("knowledge_document");
+        }
+
+        let mut conn = self.connection()?;
+        let tx = conn.transaction()?;
+        let scope = enum_to_text(&document.scope)?;
+        let kind = enum_to_text(&document.kind)?;
+        let source_kind = document.source_kind.as_ref().map(enum_to_text).transpose()?;
+
+        let result = tx.execute(
+            include_str!("../sql/knowledge_document/insert.sql"),
+            params![
+                document.id,
+                scope,
+                document.scope_ref,
+                kind,
+                document.title,
+                document.summary,
+                document.body,
+                document.source_id,
+                source_kind,
+                serde_json::to_string(&document.tags)?,
+                document.created_at.to_rfc3339(),
+                document.updated_at.to_rfc3339(),
+            ],
+        );
+
+        match result {
+            Ok(_) => {
+                record_audit_event(
+                    &tx,
+                    NewAuditEvent {
+                        team_id: knowledge_team_id(&document.scope, document.scope_ref.as_deref()),
+                        entity_type: "knowledge_document".to_string(),
+                        entity_id: document.id.clone(),
+                        action: "created".to_string(),
+                        actor_type: "system".to_string(),
+                        actor_id: None,
+                        summary: format!("Created knowledge document {}", document.title),
+                        details: serde_json::json!({
+                            "kind": enum_to_text(&document.kind)?,
+                            "scope": enum_to_text(&document.scope)?,
+                            "scope_ref": document.scope_ref,
+                            "source_id": document.source_id,
+                        }),
+                    },
+                )?;
+                tx.commit()?;
+                Ok(document)
+            }
+            Err(error) if is_unique_constraint(&error) => {
+                Err(StoreError::already_exists("knowledge_document", document.id))
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    pub fn get_knowledge_document(
+        &self,
+        id: &str,
+    ) -> Result<Option<KnowledgeDocument>, StoreError> {
+        let conn = self.connection()?;
+        conn.query_row(
+            include_str!("../sql/knowledge_document/get.sql"),
+            params![id],
+            knowledge_document_from_row,
+        )
+        .optional()
+        .map_err(Into::into)
+    }
+
+    pub fn list_knowledge_documents(
+        &self,
+        query: KnowledgeRecordQuery,
+    ) -> Result<Vec<KnowledgeDocument>, StoreError> {
+        let conn = self.connection()?;
+        let mut stmt = conn.prepare(include_str!("../sql/knowledge_document/list.sql"))?;
+        let scope = query.scope.as_ref().map(enum_to_text).transpose()?;
+        let rows = stmt.query_map(
+            params![scope, query.scope_ref, query.limit as i64],
+            knowledge_document_from_row,
+        )?;
+        collect_rows(rows)
+    }
+
+    pub fn create_knowledge_fact(
+        &self,
+        mut fact: KnowledgeFact,
+    ) -> Result<KnowledgeFact, StoreError> {
+        validate_knowledge_fact(&fact)?;
+        if fact.id.trim().is_empty() {
+            fact.id = new_id("knowledge_fact");
+        }
+
+        let mut conn = self.connection()?;
+        let tx = conn.transaction()?;
+        let scope = enum_to_text(&fact.scope)?;
+        let kind = enum_to_text(&fact.kind)?;
+        let source_kind = fact.source_kind.as_ref().map(enum_to_text).transpose()?;
+
+        let result = tx.execute(
+            include_str!("../sql/knowledge_fact/insert.sql"),
+            params![
+                fact.id,
+                scope,
+                fact.scope_ref,
+                kind,
+                fact.statement,
+                i64::from(fact.confidence),
+                fact.source_id,
+                source_kind,
+                serde_json::to_string(&fact.tags)?,
+                fact.observed_at.to_rfc3339(),
+                fact.created_at.to_rfc3339(),
+            ],
+        );
+
+        match result {
+            Ok(_) => {
+                record_audit_event(
+                    &tx,
+                    NewAuditEvent {
+                        team_id: knowledge_team_id(&fact.scope, fact.scope_ref.as_deref()),
+                        entity_type: "knowledge_fact".to_string(),
+                        entity_id: fact.id.clone(),
+                        action: "created".to_string(),
+                        actor_type: "system".to_string(),
+                        actor_id: None,
+                        summary: format!("Created knowledge fact {}", fact.id),
+                        details: serde_json::json!({
+                            "kind": enum_to_text(&fact.kind)?,
+                            "scope": enum_to_text(&fact.scope)?,
+                            "scope_ref": fact.scope_ref,
+                            "confidence": fact.confidence,
+                            "source_id": fact.source_id,
+                        }),
+                    },
+                )?;
+                tx.commit()?;
+                Ok(fact)
+            }
+            Err(error) if is_unique_constraint(&error) => {
+                Err(StoreError::already_exists("knowledge_fact", fact.id))
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    pub fn get_knowledge_fact(&self, id: &str) -> Result<Option<KnowledgeFact>, StoreError> {
+        let conn = self.connection()?;
+        conn.query_row(
+            include_str!("../sql/knowledge_fact/get.sql"),
+            params![id],
+            knowledge_fact_from_row,
+        )
+        .optional()
+        .map_err(Into::into)
+    }
+
+    pub fn list_knowledge_facts(
+        &self,
+        query: KnowledgeRecordQuery,
+    ) -> Result<Vec<KnowledgeFact>, StoreError> {
+        let conn = self.connection()?;
+        let mut stmt = conn.prepare(include_str!("../sql/knowledge_fact/list.sql"))?;
+        let scope = query.scope.as_ref().map(enum_to_text).transpose()?;
+        let rows = stmt.query_map(
+            params![scope, query.scope_ref, query.limit as i64],
+            knowledge_fact_from_row,
+        )?;
         collect_rows(rows)
     }
 
@@ -660,8 +924,28 @@ fn parse_datetime_sql(column: usize, value: String) -> rusqlite::Result<DateTime
     })
 }
 
+fn parse_optional_datetime_sql(
+    column: usize,
+    value: Option<String>,
+) -> rusqlite::Result<Option<DateTime<Utc>>> {
+    value.map(|value| parse_datetime_sql(column, value)).transpose()
+}
+
 fn bool_from_i64(value: i64) -> bool {
     value != 0
+}
+
+fn enum_to_text<T: Serialize>(value: &T) -> Result<String, StoreError> {
+    let json = serde_json::to_value(value)?;
+    json.as_str()
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| StoreError::validation("enum did not serialize to a string"))
+}
+
+fn enum_from_text_sql<T: DeserializeOwned>(column: usize, value: String) -> rusqlite::Result<T> {
+    serde_json::from_value(serde_json::Value::String(value)).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(column, Type::Text, Box::new(error))
+    })
 }
 
 fn reconcile_desired_state(
@@ -861,6 +1145,71 @@ fn validate_window(window: &WeekdayWindow) -> Result<(), StoreError> {
     Ok(())
 }
 
+fn validate_knowledge_source(source: &KnowledgeSource) -> Result<(), StoreError> {
+    if source.label.trim().is_empty() {
+        return Err(StoreError::validation("knowledge source label cannot be empty"));
+    }
+
+    validate_knowledge_scope(&source.scope, source.scope_ref.as_deref())?;
+
+    Ok(())
+}
+
+fn validate_knowledge_document(document: &KnowledgeDocument) -> Result<(), StoreError> {
+    if document.title.trim().is_empty()
+        || document.summary.trim().is_empty()
+        || document.body.trim().is_empty()
+    {
+        return Err(StoreError::validation("knowledge document fields cannot be empty"));
+    }
+
+    validate_knowledge_scope(&document.scope, document.scope_ref.as_deref())?;
+
+    Ok(())
+}
+
+fn validate_knowledge_fact(fact: &KnowledgeFact) -> Result<(), StoreError> {
+    if fact.statement.trim().is_empty() {
+        return Err(StoreError::validation("knowledge fact statement cannot be empty"));
+    }
+
+    if fact.confidence > 100 {
+        return Err(StoreError::validation("knowledge fact confidence must be between 0 and 100"));
+    }
+
+    validate_knowledge_scope(&fact.scope, fact.scope_ref.as_deref())?;
+
+    Ok(())
+}
+
+fn validate_knowledge_scope(
+    scope: &KnowledgeScope,
+    scope_ref: Option<&str>,
+) -> Result<(), StoreError> {
+    match scope {
+        KnowledgeScope::Global => {
+            if scope_ref.is_some() {
+                return Err(StoreError::validation(
+                    "global knowledge records must not have a scope_ref",
+                ));
+            }
+        }
+        KnowledgeScope::Team | KnowledgeScope::Project => {
+            let Some(scope_ref) = scope_ref else {
+                return Err(StoreError::validation(
+                    "team and project knowledge records require a scope_ref",
+                ));
+            };
+            if scope_ref.trim().is_empty() {
+                return Err(StoreError::validation("knowledge scope_ref cannot be empty"));
+            }
+        }
+        KnowledgeScope::Operational => {}
+    }
+
+    Ok(())
+}
+
 fn team_from_row(row: &Row<'_>) -> Result<Team, rusqlite::Error> {
     Ok(Team {
         id: row.get(0)?,
@@ -904,6 +1253,83 @@ fn schedule_from_row(row: &Row<'_>) -> Result<Schedule, rusqlite::Error> {
         created_at: parse_datetime_sql(6, row.get::<_, String>(6)?)?,
         updated_at: parse_datetime_sql(7, row.get::<_, String>(7)?)?,
     })
+}
+
+fn knowledge_source_from_row(row: &Row<'_>) -> Result<KnowledgeSource, rusqlite::Error> {
+    let metadata_json: String = row.get(8)?;
+    let metadata: serde_json::Value = serde_json::from_str(&metadata_json).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(8, Type::Text, Box::new(error))
+    })?;
+
+    Ok(KnowledgeSource {
+        id: row.get(0)?,
+        kind: enum_from_text_sql(1, row.get::<_, String>(1)?)?,
+        label: row.get(2)?,
+        uri: row.get(3)?,
+        scope: enum_from_text_sql(4, row.get::<_, String>(4)?)?,
+        scope_ref: row.get(5)?,
+        sync_state: enum_from_text_sql(6, row.get::<_, String>(6)?)?,
+        last_synced_at: parse_optional_datetime_sql(7, row.get::<_, Option<String>>(7)?)?,
+        metadata,
+        created_at: parse_datetime_sql(9, row.get::<_, String>(9)?)?,
+        updated_at: parse_datetime_sql(10, row.get::<_, String>(10)?)?,
+    })
+}
+
+fn knowledge_document_from_row(row: &Row<'_>) -> Result<KnowledgeDocument, rusqlite::Error> {
+    let tags_json: String = row.get(9)?;
+    let tags: Vec<String> = serde_json::from_str(&tags_json).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(9, Type::Text, Box::new(error))
+    })?;
+
+    Ok(KnowledgeDocument {
+        id: row.get(0)?,
+        scope: enum_from_text_sql(1, row.get::<_, String>(1)?)?,
+        scope_ref: row.get(2)?,
+        kind: enum_from_text_sql(3, row.get::<_, String>(3)?)?,
+        title: row.get(4)?,
+        summary: row.get(5)?,
+        body: row.get(6)?,
+        source_id: row.get(7)?,
+        source_kind: row
+            .get::<_, Option<String>>(8)?
+            .map(|value| enum_from_text_sql(8, value))
+            .transpose()?,
+        tags,
+        created_at: parse_datetime_sql(10, row.get::<_, String>(10)?)?,
+        updated_at: parse_datetime_sql(11, row.get::<_, String>(11)?)?,
+    })
+}
+
+fn knowledge_fact_from_row(row: &Row<'_>) -> Result<KnowledgeFact, rusqlite::Error> {
+    let tags_json: String = row.get(8)?;
+    let tags: Vec<String> = serde_json::from_str(&tags_json).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(8, Type::Text, Box::new(error))
+    })?;
+
+    Ok(KnowledgeFact {
+        id: row.get(0)?,
+        scope: enum_from_text_sql(1, row.get::<_, String>(1)?)?,
+        scope_ref: row.get(2)?,
+        kind: enum_from_text_sql(3, row.get::<_, String>(3)?)?,
+        statement: row.get(4)?,
+        confidence: row.get(5)?,
+        source_id: row.get(6)?,
+        source_kind: row
+            .get::<_, Option<String>>(7)?
+            .map(|value| enum_from_text_sql(7, value))
+            .transpose()?,
+        tags,
+        observed_at: parse_datetime_sql(9, row.get::<_, String>(9)?)?,
+        created_at: parse_datetime_sql(10, row.get::<_, String>(10)?)?,
+    })
+}
+
+fn knowledge_team_id(scope: &KnowledgeScope, scope_ref: Option<&str>) -> Option<String> {
+    match scope {
+        KnowledgeScope::Team => scope_ref.map(ToOwned::to_owned),
+        _ => None,
+    }
 }
 
 fn record_audit_event(conn: &Connection, input: NewAuditEvent) -> Result<AuditEvent, StoreError> {
@@ -951,7 +1377,9 @@ fn append_audit_event_with_connection(
 mod tests {
     use super::*;
     use ao_fleet_core::{
-        NewAuditEvent, NewProject, NewSchedule, NewTeam, SchedulePolicyKind, WeekdayWindow,
+        KnowledgeDocument, KnowledgeDocumentKind, KnowledgeFact, KnowledgeFactKind, KnowledgeScope,
+        KnowledgeSource, KnowledgeSourceKind, KnowledgeSyncState, NewAuditEvent, NewProject,
+        NewSchedule, NewTeam, SchedulePolicyKind, WeekdayWindow,
     };
     use chrono::{TimeZone, Utc};
     use serde_json::json;
@@ -1173,5 +1601,107 @@ mod tests {
         assert_eq!(overview.preview.items.len(), 1);
         assert_eq!(overview.preview.items[0].team_id, team.id);
         assert_eq!(overview.preview.items[0].action, FleetReconcileAction::Resume);
+    }
+
+    #[test]
+    fn knowledge_records_round_trip() {
+        let store = FleetStore::open_in_memory().expect("store opens");
+
+        let team = store
+            .create_team(NewTeam {
+                slug: "platform".to_string(),
+                name: "Platform".to_string(),
+                mission: "Own company systems".to_string(),
+                ownership: "engineering".to_string(),
+                business_priority: 9,
+            })
+            .expect("team created");
+
+        let source = store
+            .upsert_knowledge_source(KnowledgeSource {
+                id: String::new(),
+                kind: KnowledgeSourceKind::ManualNote,
+                label: "Operator note".to_string(),
+                uri: Some("file:///tmp/operator-note.md".to_string()),
+                scope: KnowledgeScope::Team,
+                scope_ref: Some(team.id.clone()),
+                sync_state: KnowledgeSyncState::Ready,
+                last_synced_at: Some(Utc::now()),
+                metadata: json!({"author": "ops"}),
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            })
+            .expect("source upserted");
+
+        let document = store
+            .create_knowledge_document(KnowledgeDocument {
+                id: String::new(),
+                scope: KnowledgeScope::Team,
+                scope_ref: Some(team.id.clone()),
+                kind: KnowledgeDocumentKind::Runbook,
+                title: "On-call runbook".to_string(),
+                summary: "How to restart the fleet".to_string(),
+                body: "Steps for handling fleet incidents".to_string(),
+                source_id: Some(source.id.clone()),
+                source_kind: Some(KnowledgeSourceKind::ManualNote),
+                tags: vec!["ops".to_string(), "runbook".to_string()],
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            })
+            .expect("document created");
+
+        let fact = store
+            .create_knowledge_fact(KnowledgeFact {
+                id: String::new(),
+                scope: KnowledgeScope::Team,
+                scope_ref: Some(team.id.clone()),
+                kind: KnowledgeFactKind::Policy,
+                statement: "Platform owns production daemon policy".to_string(),
+                confidence: 95,
+                source_id: Some(source.id.clone()),
+                source_kind: Some(KnowledgeSourceKind::ManualNote),
+                tags: vec!["policy".to_string()],
+                observed_at: Utc::now(),
+                created_at: Utc::now(),
+            })
+            .expect("fact created");
+
+        let query = KnowledgeRecordQuery {
+            scope: Some(KnowledgeScope::Team),
+            scope_ref: Some(team.id.clone()),
+            limit: 10,
+        };
+
+        let sources = store.list_knowledge_sources(query.clone()).expect("sources listed");
+        let documents = store.list_knowledge_documents(query.clone()).expect("documents listed");
+        let facts = store.list_knowledge_facts(query).expect("facts listed");
+
+        assert_eq!(sources.len(), 1);
+        assert_eq!(documents.len(), 1);
+        assert_eq!(facts.len(), 1);
+        assert_eq!(sources[0].sync_state, KnowledgeSyncState::Ready);
+        assert_eq!(documents[0].source_id.as_deref(), Some(source.id.as_str()));
+        assert_eq!(facts[0].source_id.as_deref(), Some(source.id.as_str()));
+        assert_eq!(
+            store
+                .get_knowledge_document(&document.id)
+                .expect("document fetched")
+                .expect("document exists")
+                .title,
+            "On-call runbook"
+        );
+        assert_eq!(
+            store
+                .get_knowledge_fact(&fact.id)
+                .expect("fact fetched")
+                .expect("fact exists")
+                .confidence,
+            95
+        );
+
+        assert_eq!(
+            store.list_audit_events(Some(&team.id), None).expect("audit events listed").len(),
+            4
+        );
     }
 }

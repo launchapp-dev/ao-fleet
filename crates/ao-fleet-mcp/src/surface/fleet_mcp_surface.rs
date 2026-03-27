@@ -28,6 +28,9 @@ impl FleetMcpSurface {
             ],
             tools: vec![
                 overview_tool(),
+                knowledge_source_list_tool(),
+                knowledge_document_list_tool(),
+                knowledge_fact_list_tool(),
                 team_list_tool(),
                 team_create_tool(),
                 project_list_tool(),
@@ -81,6 +84,39 @@ fn overview_tool() -> McpToolDescriptor {
     }
 }
 
+fn knowledge_source_list_tool() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "fleet.knowledge.source.list".to_string(),
+        description: "List knowledge ingestion sources for the fleet".to_string(),
+        input_schema: knowledge_record_list_schema(
+            "List knowledge sources with optional scope filters".to_string(),
+        ),
+        tags: vec!["knowledge".to_string(), "read".to_string(), "source".to_string()],
+    }
+}
+
+fn knowledge_document_list_tool() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "fleet.knowledge.document.list".to_string(),
+        description: "List persisted knowledge documents for the fleet".to_string(),
+        input_schema: knowledge_record_list_schema(
+            "List knowledge documents with optional scope filters".to_string(),
+        ),
+        tags: vec!["knowledge".to_string(), "read".to_string(), "document".to_string()],
+    }
+}
+
+fn knowledge_fact_list_tool() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "fleet.knowledge.fact.list".to_string(),
+        description: "List persisted knowledge facts for the fleet".to_string(),
+        input_schema: knowledge_record_list_schema(
+            "List knowledge facts with optional scope filters".to_string(),
+        ),
+        tags: vec!["knowledge".to_string(), "read".to_string(), "fact".to_string()],
+    }
+}
+
 impl Default for FleetMcpSurface {
     fn default() -> Self {
         Self::new()
@@ -94,6 +130,29 @@ fn team_list_tool() -> McpToolDescriptor {
         input_schema: empty_schema("List teams".to_string()),
         tags: vec!["inventory".to_string(), "team".to_string()],
     }
+}
+
+fn knowledge_record_list_schema(description: String) -> McpToolInputSchema {
+    schema_with_properties(
+        description,
+        vec![
+            enum_property(
+                "scope",
+                "Optional knowledge scope filter",
+                false,
+                vec!["global", "team", "project", "operational"],
+                "team",
+            ),
+            string_property(
+                "scope_ref",
+                "Optional team or project identifier for scoped knowledge",
+                false,
+                "team_marketing",
+            ),
+            integer_property("limit", "Maximum number of records to return", false, 100),
+        ],
+        Vec::new(),
+    )
 }
 
 fn team_create_tool() -> McpToolDescriptor {
@@ -399,6 +458,9 @@ mod tests {
             names,
             vec![
                 "fleet.overview",
+                "fleet.knowledge.source.list",
+                "fleet.knowledge.document.list",
+                "fleet.knowledge.fact.list",
                 "fleet.team.list",
                 "fleet.team.create",
                 "fleet.project.list",
@@ -415,6 +477,7 @@ mod tests {
         let surface = FleetMcpSurface::new();
 
         assert!(surface.tool("fleet.team.create").is_some());
+        assert!(surface.tool("fleet.knowledge.document.list").is_some());
         assert!(surface.tool("fleet.missing").is_none());
     }
 }

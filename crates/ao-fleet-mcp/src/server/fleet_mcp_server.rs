@@ -110,6 +110,15 @@ impl<H: FleetMcpApi> FleetMcpServer<H> {
             "fleet.overview" => self.to_tool_result(
                 self.handlers.fleet_overview(parse_optional_input(call.arguments)?)?,
             ),
+            "fleet.knowledge.source.list" => self.to_tool_result(
+                self.handlers.list_knowledge_sources(parse_optional_input(call.arguments)?)?,
+            ),
+            "fleet.knowledge.document.list" => self.to_tool_result(
+                self.handlers.list_knowledge_documents(parse_optional_input(call.arguments)?)?,
+            ),
+            "fleet.knowledge.fact.list" => self.to_tool_result(
+                self.handlers.list_knowledge_facts(parse_optional_input(call.arguments)?)?,
+            ),
             "fleet.team.list" => self
                 .to_tool_result(self.handlers.list_teams(parse_optional_input(call.arguments)?)?),
             "fleet.team.create" => self
@@ -273,7 +282,9 @@ mod tests {
     use std::cell::RefCell;
 
     use ao_fleet_core::{
-        DaemonDesiredState, Project, Schedule, SchedulePolicyKind, Team, WeekdayWindow,
+        DaemonDesiredState, KnowledgeDocument, KnowledgeDocumentKind, KnowledgeFact,
+        KnowledgeFactKind, KnowledgeScope, KnowledgeSource, KnowledgeSourceKind,
+        KnowledgeSyncState, Project, Schedule, SchedulePolicyKind, Team, WeekdayWindow,
     };
     use chrono::Utc;
 
@@ -288,6 +299,7 @@ mod tests {
     use crate::api::fleet_mcp_api::FleetMcpApi;
     use crate::error::fleet_mcp_error::FleetMcpError;
     use crate::inputs::daemon_reconcile_input::DaemonReconcileInput;
+    use crate::inputs::knowledge_record_list_input::KnowledgeRecordListInput;
     use crate::inputs::project_create_input::ProjectCreateInput;
     use crate::inputs::project_list_input::ProjectListInput;
     use crate::inputs::schedule_create_input::ScheduleCreateInput;
@@ -419,6 +431,67 @@ mod tests {
             })
         }
 
+        fn list_knowledge_sources(
+            &self,
+            _input: KnowledgeRecordListInput,
+        ) -> Result<Vec<KnowledgeSource>, FleetMcpError> {
+            self.calls.borrow_mut().push("list_knowledge_sources".to_string());
+            Ok(vec![KnowledgeSource {
+                id: "source-1".to_string(),
+                kind: KnowledgeSourceKind::ManualNote,
+                label: "Operator note".to_string(),
+                uri: None,
+                scope: KnowledgeScope::Team,
+                scope_ref: Some("team-1".to_string()),
+                sync_state: KnowledgeSyncState::Ready,
+                last_synced_at: Some(Utc::now()),
+                metadata: serde_json::json!({"source": "test"}),
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            }])
+        }
+
+        fn list_knowledge_documents(
+            &self,
+            _input: KnowledgeRecordListInput,
+        ) -> Result<Vec<KnowledgeDocument>, FleetMcpError> {
+            self.calls.borrow_mut().push("list_knowledge_documents".to_string());
+            Ok(vec![KnowledgeDocument {
+                id: "document-1".to_string(),
+                scope: KnowledgeScope::Team,
+                scope_ref: Some("team-1".to_string()),
+                kind: KnowledgeDocumentKind::Runbook,
+                title: "On-call runbook".to_string(),
+                summary: "Restart steps".to_string(),
+                body: "Restart the daemon if health stays red".to_string(),
+                source_id: Some("source-1".to_string()),
+                source_kind: Some(KnowledgeSourceKind::ManualNote),
+                tags: vec!["ops".to_string()],
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            }])
+        }
+
+        fn list_knowledge_facts(
+            &self,
+            _input: KnowledgeRecordListInput,
+        ) -> Result<Vec<KnowledgeFact>, FleetMcpError> {
+            self.calls.borrow_mut().push("list_knowledge_facts".to_string());
+            Ok(vec![KnowledgeFact {
+                id: "fact-1".to_string(),
+                scope: KnowledgeScope::Team,
+                scope_ref: Some("team-1".to_string()),
+                kind: KnowledgeFactKind::Policy,
+                statement: "Marketing owns launch messaging".to_string(),
+                confidence: 92,
+                source_id: Some("source-1".to_string()),
+                source_kind: Some(KnowledgeSourceKind::ManualNote),
+                tags: vec!["policy".to_string()],
+                observed_at: Utc::now(),
+                created_at: Utc::now(),
+            }])
+        }
+
         fn list_projects(&self, _input: ProjectListInput) -> Result<Vec<Project>, FleetMcpError> {
             self.calls.borrow_mut().push("list_projects".to_string());
             Ok(Vec::new())
@@ -539,6 +612,23 @@ mod tests {
     }
 
     #[test]
+    fn tools_call_routes_knowledge_documents() {
+        let server = FleetMcpServer::new(MockHandlers::default());
+        let response = server
+            .handle_message(
+                r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"fleet.knowledge.document.list","arguments":{"scope":"team","scope_ref":"team-1","limit":10}}}"#,
+            )
+            .expect("message handled")
+            .expect("response returned");
+
+        let payload: serde_json::Value = serde_json::from_str(&response).expect("valid response");
+        let text = payload["result"]["content"][0]["text"].as_str().expect("text content");
+
+        assert!(text.contains("\"On-call runbook\""), "response: {response}");
+        assert!(text.contains("\"scope_ref\": \"team-1\""), "response: {response}");
+    }
+
+    #[test]
     fn tools_list_returns_surface() {
         let server = FleetMcpServer::new(MockHandlers::default());
         let response = server
@@ -549,5 +639,6 @@ mod tests {
         assert!(response.contains("\"fleet.team.list\""));
         assert!(response.contains("\"fleet.daemon.reconcile\""));
         assert!(response.contains("\"fleet.overview\""));
+        assert!(response.contains("\"fleet.knowledge.document.list\""));
     }
 }

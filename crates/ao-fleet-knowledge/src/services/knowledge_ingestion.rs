@@ -33,7 +33,7 @@ impl KnowledgeIngestionService {
 
 #[cfg(test)]
 mod tests {
-    use ao_fleet_core::{KnowledgeScope, KnowledgeSource, KnowledgeSourceKind};
+    use ao_fleet_core::{KnowledgeScope, KnowledgeSource, KnowledgeSourceKind, KnowledgeSyncState};
     use chrono::Utc;
     use serde_json::json;
 
@@ -48,6 +48,9 @@ mod tests {
             label: "Operator note".to_string(),
             uri: None,
             scope: KnowledgeScope::Global,
+            scope_ref: None,
+            sync_state: KnowledgeSyncState::Pending,
+            last_synced_at: None,
             metadata: json!({"note": "seed"}),
             created_at: Utc::now(),
             updated_at: Utc::now(),

@@ -9,6 +9,7 @@ use crate::models::knowledge_source_kind::KnowledgeSourceKind;
 pub struct KnowledgeFact {
     pub id: String,
     pub scope: KnowledgeScope,
+    pub scope_ref: Option<String>,
     pub kind: KnowledgeFactKind,
     pub statement: String,
     pub confidence: u8,
