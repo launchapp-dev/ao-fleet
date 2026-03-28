@@ -285,6 +285,21 @@ fn run_remote_project_json(base_url: &str, args: &[String]) -> Result<Value> {
 
     let client = Client::new();
     match (args[0].as_str(), args[1].as_str()) {
+        ("daemon", "status") => {
+            send_remote_request(&client, Method::GET, base_url, "/daemon/status", &[], None)
+        }
+        ("daemon", "start") => {
+            send_remote_request(&client, Method::POST, base_url, "/daemon/start", &[], None)
+        }
+        ("daemon", "stop") => {
+            send_remote_request(&client, Method::POST, base_url, "/daemon/stop", &[], None)
+        }
+        ("daemon", "pause") => {
+            send_remote_request(&client, Method::POST, base_url, "/daemon/pause", &[], None)
+        }
+        ("daemon", "resume") => {
+            send_remote_request(&client, Method::POST, base_url, "/daemon/resume", &[], None)
+        }
         ("workflow", "list") => {
             let mut query = Vec::<(String, String)>::new();
             if let Some(status) = flag_value(args, "--status") {
