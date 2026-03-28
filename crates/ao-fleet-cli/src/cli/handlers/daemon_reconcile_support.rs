@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use anyhow::{Result, anyhow, bail};
 use ao_fleet_ao::{AoDaemonClient, DaemonCommandResult, DaemonStartOptions, DaemonState};
-use ao_fleet_core::DaemonDesiredState;
+use ao_fleet_core::{DaemonDesiredState, DaemonOverride};
 
 use super::daemon_reconcile_result::DaemonReconcileResult;
 
@@ -56,8 +56,10 @@ pub(crate) fn reconcile_project<C: DaemonController + ?Sized>(
     project_root: String,
     target: serde_json::Value,
     desired_state: DaemonDesiredState,
+    reason: String,
     backlog_count: usize,
     schedule_ids: Vec<String>,
+    override_applied: Option<DaemonOverride>,
     apply: bool,
 ) -> Result<DaemonReconcileResult> {
     let observed_state = resolve_observed_state(controller, &project_root);
@@ -71,7 +73,11 @@ pub(crate) fn reconcile_project<C: DaemonController + ?Sized>(
         observed_state.clone()
     };
 
-    let observed_state = refreshed_state.or_else(|| action.as_deref().and_then(action_to_state));
+    let observed_state = if apply {
+        refreshed_state.or_else(|| action.as_deref().and_then(action_to_state))
+    } else {
+        refreshed_state
+    };
 
     Ok(DaemonReconcileResult {
         team_id,
@@ -80,8 +86,10 @@ pub(crate) fn reconcile_project<C: DaemonController + ?Sized>(
         target,
         desired_state,
         observed_state,
+        reason,
         backlog_count,
         schedule_ids,
+        override_applied,
         action,
         command_result,
     })
@@ -134,11 +142,16 @@ fn planned_action(
         (DaemonDesiredState::Running, Some(DaemonState::Paused)) => Some("resume"),
         (DaemonDesiredState::Running, _) => Some("start"),
         (DaemonDesiredState::Paused, Some(DaemonState::Running)) => Some("pause"),
+        (DaemonDesiredState::Paused, Some(DaemonState::Paused)) => None,
         (DaemonDesiredState::Paused, _) => None,
+        (DaemonDesiredState::Stopped, Some(DaemonState::Stopped)) => None,
         (DaemonDesiredState::Stopped, Some(DaemonState::Running | DaemonState::Paused)) => {
             Some("stop")
         }
-        (DaemonDesiredState::Stopped, _) => Some("stop"),
+        (DaemonDesiredState::Stopped, Some(DaemonState::Crashed | DaemonState::Unknown(_))) => {
+            Some("stop")
+        }
+        (DaemonDesiredState::Stopped, None) => Some("stop"),
     }
 }
 
@@ -326,8 +339,10 @@ mod tests {
             "/tmp/project".to_string(),
             serde_json::json!({"transport": "local_cli"}),
             DaemonDesiredState::Running,
+            "schedule requires running".to_string(),
             7,
             vec!["schedule-1".to_string()],
+            None,
             false,
         )
         .expect("reconcile succeeds");
@@ -367,8 +382,10 @@ mod tests {
             "/tmp/project".to_string(),
             serde_json::json!({"transport": "local_cli"}),
             DaemonDesiredState::Running,
+            "schedule requires running".to_string(),
             7,
             vec!["schedule-1".to_string()],
+            None,
             true,
         )
         .expect("reconcile succeeds");
@@ -398,5 +415,15 @@ mod tests {
                 "project_status".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn planned_action_keeps_stopped_projects_stopped() {
+        assert_eq!(planned_action(DaemonDesiredState::Stopped, Some(DaemonState::Stopped)), None);
+    }
+
+    #[test]
+    fn planned_action_keeps_paused_projects_paused() {
+        assert_eq!(planned_action(DaemonDesiredState::Paused, Some(DaemonState::Paused)), None);
     }
 }

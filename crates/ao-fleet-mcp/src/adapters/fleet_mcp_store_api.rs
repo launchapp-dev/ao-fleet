@@ -1,26 +1,34 @@
 use std::collections::BTreeMap;
 
 use ao_fleet_core::{
-    DaemonDesiredState, KnowledgeDocument, KnowledgeFact, KnowledgeSource, NewProject, NewSchedule,
-    NewTeam, Project, Schedule, Team,
+    DaemonOverride, Host, KnowledgeDocument, KnowledgeFact, KnowledgeSource, NewDaemonOverride,
+    NewProject, NewSchedule, NewTeam, Project, ProjectHostPlacement, Schedule, Team,
 };
 use ao_fleet_knowledge::{KnowledgeQuery, KnowledgeSearchResult, KnowledgeSearchService};
-use ao_fleet_scheduler::schedule_evaluator::ScheduleEvaluator;
 use ao_fleet_store::{
     FleetDaemonStatus, FleetOverview, FleetOverviewQuery, FleetStore, KnowledgeRecordQuery,
+    TeamReconcileEvaluation,
 };
 use chrono::Utc;
 
 use crate::api::fleet_mcp_api::FleetMcpApi;
 use crate::error::fleet_mcp_error::FleetMcpError;
+use crate::inputs::daemon_override_clear_input::DaemonOverrideClearInput;
+use crate::inputs::daemon_override_list_input::DaemonOverrideListInput;
+use crate::inputs::daemon_override_upsert_input::DaemonOverrideUpsertInput;
 use crate::inputs::daemon_reconcile_input::DaemonReconcileInput;
 use crate::inputs::daemon_status_input::DaemonStatusInput;
+use crate::inputs::host_get_input::HostGetInput;
+use crate::inputs::host_list_input::HostListInput;
 use crate::inputs::knowledge_document_create_input::KnowledgeDocumentCreateInput;
 use crate::inputs::knowledge_fact_create_input::KnowledgeFactCreateInput;
 use crate::inputs::knowledge_record_list_input::KnowledgeRecordListInput;
 use crate::inputs::knowledge_search_input::KnowledgeSearchInput;
 use crate::inputs::knowledge_source_upsert_input::KnowledgeSourceUpsertInput;
 use crate::inputs::project_create_input::ProjectCreateInput;
+use crate::inputs::project_host_placement_assign_input::ProjectHostPlacementAssignInput;
+use crate::inputs::project_host_placement_clear_input::ProjectHostPlacementClearInput;
+use crate::inputs::project_host_placement_list_input::ProjectHostPlacementListInput;
 use crate::inputs::project_list_input::ProjectListInput;
 use crate::inputs::schedule_create_input::ScheduleCreateInput;
 use crate::inputs::schedule_list_input::ScheduleListInput;
@@ -49,6 +57,14 @@ impl FleetMcpApi for FleetMcpStoreApi {
         input: DaemonStatusInput,
     ) -> Result<Vec<FleetDaemonStatus>, FleetMcpError> {
         self.store.fleet_daemon_statuses(input.team_id.as_deref()).map_err(Into::into)
+    }
+
+    fn list_hosts(&self, _input: HostListInput) -> Result<Vec<Host>, FleetMcpError> {
+        self.store.list_hosts().map_err(Into::into)
+    }
+
+    fn get_host(&self, input: HostGetInput) -> Result<Option<Host>, FleetMcpError> {
+        self.store.get_host(&input.id).map_err(Into::into)
     }
 
     fn list_teams(&self, _input: TeamListInput) -> Result<Vec<Team>, FleetMcpError> {
@@ -109,6 +125,85 @@ impl FleetMcpApi for FleetMcpStoreApi {
                 enabled: input.enabled,
             })
             .map_err(Into::into)
+    }
+
+    fn list_project_host_placements(
+        &self,
+        input: ProjectHostPlacementListInput,
+    ) -> Result<Vec<ProjectHostPlacement>, FleetMcpError> {
+        let placements = self.store.list_project_host_placements()?;
+        if let Some(team_id) = input.team_id.as_deref() {
+            let project_ids = self
+                .store
+                .list_projects(Some(team_id))?
+                .into_iter()
+                .map(|project| project.id)
+                .collect::<std::collections::BTreeSet<_>>();
+            Ok(placements
+                .into_iter()
+                .filter(|placement| project_ids.contains(&placement.project_id))
+                .collect())
+        } else {
+            Ok(placements)
+        }
+    }
+
+    fn assign_project_host_placement(
+        &self,
+        input: ProjectHostPlacementAssignInput,
+    ) -> Result<ProjectHostPlacement, FleetMcpError> {
+        self.store
+            .upsert_project_host_placement(ProjectHostPlacement {
+                project_id: input.project_id,
+                host_id: input.host_id,
+                assignment_source: input.assignment_source,
+                assigned_at: Utc::now(),
+            })
+            .map_err(Into::into)
+    }
+
+    fn clear_project_host_placement(
+        &self,
+        input: ProjectHostPlacementClearInput,
+    ) -> Result<bool, FleetMcpError> {
+        self.store.clear_project_host_placement(&input.project_id).map_err(Into::into)
+    }
+
+    fn list_daemon_overrides(
+        &self,
+        input: DaemonOverrideListInput,
+    ) -> Result<Vec<DaemonOverride>, FleetMcpError> {
+        let overrides = self.store.list_daemon_overrides()?;
+        Ok(match input.team_id {
+            Some(team_id) => overrides
+                .into_iter()
+                .filter(|override_record| override_record.team_id == team_id)
+                .collect(),
+            None => overrides,
+        })
+    }
+
+    fn upsert_daemon_override(
+        &self,
+        input: DaemonOverrideUpsertInput,
+    ) -> Result<DaemonOverride, FleetMcpError> {
+        self.store
+            .upsert_daemon_override(NewDaemonOverride {
+                team_id: input.team_id,
+                mode: input.mode,
+                forced_state: input.forced_state,
+                pause_until: input.pause_until,
+                note: input.note,
+                source: input.source,
+            })
+            .map_err(Into::into)
+    }
+
+    fn clear_daemon_override(
+        &self,
+        input: DaemonOverrideClearInput,
+    ) -> Result<bool, FleetMcpError> {
+        self.store.clear_daemon_override(&input.team_id).map_err(Into::into)
     }
 
     fn list_knowledge_sources(
@@ -229,25 +324,41 @@ impl FleetMcpApi for FleetMcpStoreApi {
         input: DaemonReconcileInput,
     ) -> Result<DaemonReconcileResult, FleetMcpError> {
         let schedules = self.store.list_schedules(None)?;
+        let overrides = self.store.list_daemon_overrides()?;
         let evaluated_at = input.at.unwrap_or_else(Utc::now);
+        let schedules_by_team = group_schedules_by_team(schedules);
+        let overrides_by_team = group_overrides_by_team(overrides);
+        let mut team_ids = std::collections::BTreeSet::new();
+        for team_id in schedules_by_team.keys() {
+            team_ids.insert(team_id.clone());
+        }
+        for team_id in overrides_by_team.keys() {
+            team_ids.insert(team_id.clone());
+        }
 
         let mut per_team: BTreeMap<String, DaemonReconcileDecision> = BTreeMap::new();
-        for schedule in schedules {
-            let backlog_count = input.backlog_by_team.get(&schedule.team_id).copied().unwrap_or(0);
-            let desired_state = ScheduleEvaluator::evaluate(&schedule, evaluated_at, backlog_count);
+        for team_id in team_ids {
+            let team_schedules = schedules_by_team.get(&team_id).cloned().unwrap_or_default();
+            let backlog_count = input.backlog_by_team.get(&team_id).copied().unwrap_or(0);
+            let evaluation = TeamReconcileEvaluation::evaluate(
+                team_id.clone(),
+                &team_schedules,
+                overrides_by_team.get(&team_id),
+                evaluated_at,
+                backlog_count,
+            );
 
-            let entry = per_team.entry(schedule.team_id.clone()).or_insert_with(|| {
+            per_team.insert(
+                team_id.clone(),
                 DaemonReconcileDecision {
-                    team_id: schedule.team_id.clone(),
-                    desired_state,
+                    team_id,
+                    desired_state: evaluation.desired_state,
                     backlog_count,
-                    schedule_ids: Vec::new(),
-                }
-            });
-
-            entry.desired_state = merge_desired_state(entry.desired_state, desired_state);
-            entry.backlog_count = entry.backlog_count.max(backlog_count);
-            entry.schedule_ids.push(schedule.id);
+                    schedule_ids: evaluation.schedule_ids,
+                    reason: evaluation.reason,
+                    override_applied: evaluation.override_applied,
+                },
+            );
         }
 
         Ok(DaemonReconcileResult {
@@ -262,17 +373,19 @@ fn record_query_from_input(input: KnowledgeRecordListInput) -> KnowledgeRecordQu
     KnowledgeRecordQuery { scope: input.scope, scope_ref: input.scope_ref, limit: input.limit }
 }
 
-fn merge_desired_state(
-    current: DaemonDesiredState,
-    candidate: DaemonDesiredState,
-) -> DaemonDesiredState {
-    match (current, candidate) {
-        (DaemonDesiredState::Running, _) | (_, DaemonDesiredState::Running) => {
-            DaemonDesiredState::Running
-        }
-        (DaemonDesiredState::Paused, _) | (_, DaemonDesiredState::Paused) => {
-            DaemonDesiredState::Paused
-        }
-        _ => DaemonDesiredState::Stopped,
+fn group_schedules_by_team(schedules: Vec<Schedule>) -> BTreeMap<String, Vec<Schedule>> {
+    let mut schedules_by_team: BTreeMap<String, Vec<Schedule>> = BTreeMap::new();
+
+    for schedule in schedules {
+        schedules_by_team.entry(schedule.team_id.clone()).or_default().push(schedule);
     }
+
+    schedules_by_team
+}
+
+fn group_overrides_by_team(overrides: Vec<DaemonOverride>) -> BTreeMap<String, DaemonOverride> {
+    overrides
+        .into_iter()
+        .map(|override_record| (override_record.team_id.clone(), override_record))
+        .collect()
 }

@@ -8,6 +8,7 @@ license.workspace = true
 ao-fleet-core = { path = "../ao-fleet-core" }
 ao-fleet-scheduler = { path = "../ao-fleet-scheduler" }
 chrono.workspace = true
+chrono-tz.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true

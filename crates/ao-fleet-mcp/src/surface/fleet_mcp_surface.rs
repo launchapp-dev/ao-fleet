@@ -38,10 +38,18 @@ impl FleetMcpSurface {
                 knowledge_fact_create_tool(),
                 team_list_tool(),
                 team_create_tool(),
+                host_list_tool(),
+                host_get_tool(),
                 project_list_tool(),
                 project_create_tool(),
+                project_host_placement_list_tool(),
+                project_host_placement_assign_tool(),
+                project_host_placement_clear_tool(),
                 schedule_list_tool(),
                 schedule_create_tool(),
+                daemon_override_list_tool(),
+                daemon_override_set_tool(),
+                daemon_override_clear_tool(),
                 daemon_reconcile_tool(),
             ],
         }
@@ -488,6 +496,28 @@ fn team_create_tool() -> McpToolDescriptor {
     }
 }
 
+fn host_list_tool() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "fleet.host.list".to_string(),
+        description: "List fleet hosts and their current metadata".to_string(),
+        input_schema: empty_schema("List hosts".to_string()),
+        tags: vec!["inventory".to_string(), "host".to_string()],
+    }
+}
+
+fn host_get_tool() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "fleet.host.get".to_string(),
+        description: "Fetch a single fleet host by id".to_string(),
+        input_schema: schema_with_properties(
+            "Fetch a host by id".to_string(),
+            vec![string_property("id", "Host id", true, "host_founder")],
+            vec!["id".to_string()],
+        ),
+        tags: vec!["inventory".to_string(), "host".to_string(), "read".to_string()],
+    }
+}
+
 fn project_list_tool() -> McpToolDescriptor {
     McpToolDescriptor {
         name: "fleet.project.list".to_string(),
@@ -543,6 +573,49 @@ fn project_create_tool() -> McpToolDescriptor {
             ],
         ),
         tags: vec!["write".to_string(), "project".to_string()],
+    }
+}
+
+fn project_host_placement_list_tool() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "fleet.project.host.list".to_string(),
+        description: "List project to host placements".to_string(),
+        input_schema: schema_with_properties(
+            "List project host placements with an optional team filter".to_string(),
+            vec![string_property("team_id", "Optional team id filter", false, "team_marketing")],
+            Vec::new(),
+        ),
+        tags: vec!["host".to_string(), "inventory".to_string(), "read".to_string()],
+    }
+}
+
+fn project_host_placement_assign_tool() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "fleet.project.host.assign".to_string(),
+        description: "Assign a project to a host".to_string(),
+        input_schema: schema_with_properties(
+            "Assign a project to a host".to_string(),
+            vec![
+                string_property("project_id", "Project id", true, "project_launchapp"),
+                string_property("host_id", "Host id", true, "host_founder"),
+                string_property("assignment_source", "Source of the assignment", true, "founder"),
+            ],
+            vec!["project_id".to_string(), "host_id".to_string(), "assignment_source".to_string()],
+        ),
+        tags: vec!["host".to_string(), "inventory".to_string(), "write".to_string()],
+    }
+}
+
+fn project_host_placement_clear_tool() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "fleet.project.host.clear".to_string(),
+        description: "Clear a project host placement".to_string(),
+        input_schema: schema_with_properties(
+            "Clear a project host placement".to_string(),
+            vec![string_property("project_id", "Project id", true, "project_launchapp")],
+            vec!["project_id".to_string()],
+        ),
+        tags: vec!["host".to_string(), "inventory".to_string(), "write".to_string()],
     }
 }
 
@@ -606,10 +679,79 @@ fn schedule_create_tool() -> McpToolDescriptor {
     }
 }
 
+fn daemon_override_list_tool() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "fleet.daemon.override.list".to_string(),
+        description: "List founder overrides for teams".to_string(),
+        input_schema: schema_with_properties(
+            "List overrides with an optional team filter".to_string(),
+            vec![string_property("team_id", "Optional team id filter", false, "team_marketing")],
+            Vec::new(),
+        ),
+        tags: vec!["daemon".to_string(), "override".to_string(), "read".to_string()],
+    }
+}
+
+fn daemon_override_set_tool() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "fleet.daemon.override.set".to_string(),
+        description: "Create or update a founder override for a team".to_string(),
+        input_schema: schema_with_properties(
+            "Create or update a daemon override".to_string(),
+            vec![
+                string_property("team_id", "Owning team id", true, "team_marketing"),
+                enum_property(
+                    "mode",
+                    "Override mode",
+                    true,
+                    vec!["force_desired_state", "freeze_until"],
+                    "force_desired_state",
+                ),
+                enum_property(
+                    "forced_state",
+                    "Desired daemon state to force when the mode is force_desired_state",
+                    false,
+                    vec!["running", "paused", "stopped"],
+                    "running",
+                ),
+                string_property(
+                    "pause_until",
+                    "RFC 3339 timestamp for freeze_until overrides",
+                    false,
+                    "2025-03-03T18:00:00Z",
+                ),
+                string_property(
+                    "note",
+                    "Human-readable founder note",
+                    false,
+                    "Pause for launch review",
+                ),
+                string_property("source", "Source label for the override", true, "founder"),
+            ],
+            vec!["team_id".to_string(), "mode".to_string(), "source".to_string()],
+        ),
+        tags: vec!["daemon".to_string(), "override".to_string(), "write".to_string()],
+    }
+}
+
+fn daemon_override_clear_tool() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "fleet.daemon.override.clear".to_string(),
+        description: "Clear a founder override for a team".to_string(),
+        input_schema: schema_with_properties(
+            "Clear a daemon override".to_string(),
+            vec![string_property("team_id", "Team id", true, "team_marketing")],
+            vec!["team_id".to_string()],
+        ),
+        tags: vec!["daemon".to_string(), "override".to_string(), "write".to_string()],
+    }
+}
+
 fn daemon_reconcile_tool() -> McpToolDescriptor {
     McpToolDescriptor {
         name: "fleet.daemon.reconcile".to_string(),
-        description: "Reconcile desired daemon state across the fleet".to_string(),
+        description: "Reconcile desired daemon state across the fleet with reasons and overrides"
+            .to_string(),
         input_schema: schema_with_properties(
             "Reconcile all daemon desired state against observed state".to_string(),
             vec![boolean_property(
@@ -761,10 +903,18 @@ mod tests {
                 "fleet.knowledge.fact.create",
                 "fleet.team.list",
                 "fleet.team.create",
+                "fleet.host.list",
+                "fleet.host.get",
                 "fleet.project.list",
                 "fleet.project.create",
+                "fleet.project.host.list",
+                "fleet.project.host.assign",
+                "fleet.project.host.clear",
                 "fleet.schedule.list",
                 "fleet.schedule.create",
+                "fleet.daemon.override.list",
+                "fleet.daemon.override.set",
+                "fleet.daemon.override.clear",
                 "fleet.daemon.reconcile",
             ]
         );

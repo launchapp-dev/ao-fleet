@@ -1,12 +1,11 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 
 use ao_fleet_ao::DaemonState;
-use ao_fleet_core::{DaemonDesiredState, ObservedDaemonStatus};
-use ao_fleet_scheduler::schedule_evaluator::ScheduleEvaluator;
-use ao_fleet_store::FleetStore;
+use ao_fleet_core::{DaemonDesiredState, DaemonOverride, ObservedDaemonStatus, Schedule};
+use ao_fleet_store::{FleetStore, TeamReconcileEvaluation};
 
 use crate::cli::handlers::daemon_reconcile_command::DaemonReconcileCommand;
 use crate::cli::handlers::daemon_reconcile_support::reconcile_project;
@@ -20,6 +19,13 @@ pub fn daemon_reconcile(db_path: &str, command: DaemonReconcileCommand) -> Resul
     let team_filter = command.team_id.as_deref();
     let schedules = store.list_schedules(team_filter)?;
     let projects = store.list_projects(team_filter)?;
+    let overrides = store
+        .list_daemon_overrides()?
+        .into_iter()
+        .filter(|override_record| {
+            team_filter.map_or(true, |team_id| override_record.team_id == team_id)
+        })
+        .collect::<Vec<_>>();
     let placement_map = build_project_host_placement_map(store.list_project_host_placements()?);
     let host_map = build_host_map(store.list_hosts()?);
     let backlog_map = parse_backlog_map(command.backlog)?;
@@ -28,17 +34,31 @@ pub fn daemon_reconcile(db_path: &str, command: DaemonReconcileCommand) -> Resul
         None => Utc::now(),
     };
 
-    let mut by_team = BTreeMap::<String, TeamReconcileState>::new();
+    let schedules_by_team = group_schedules_by_team(schedules);
+    let overrides_by_team = group_overrides_by_team(overrides);
+    let mut team_ids = BTreeSet::new();
+    for project in &projects {
+        team_ids.insert(project.team_id.clone());
+    }
+    for team_id in schedules_by_team.keys() {
+        team_ids.insert(team_id.clone());
+    }
+    for team_id in overrides_by_team.keys() {
+        team_ids.insert(team_id.clone());
+    }
 
-    for schedule in schedules {
-        let backlog_count = backlog_map.get(&schedule.team_id).copied().unwrap_or(0);
-        let desired_state = ScheduleEvaluator::evaluate(&schedule, at, backlog_count);
-        let result = by_team.entry(schedule.team_id.clone()).or_insert_with(|| {
-            TeamReconcileState { desired_state, backlog_count, schedule_ids: Vec::new() }
-        });
-
-        result.desired_state = merge_desired_state(result.desired_state, desired_state);
-        result.schedule_ids.push(schedule.id);
+    let mut by_team = BTreeMap::new();
+    for team_id in team_ids {
+        let team_schedules = schedules_by_team.get(&team_id).cloned().unwrap_or_default();
+        let backlog_count = backlog_map.get(&team_id).copied().unwrap_or(0);
+        let evaluation = TeamReconcileEvaluation::evaluate(
+            team_id.clone(),
+            &team_schedules,
+            overrides_by_team.get(&team_id),
+            at,
+            backlog_count,
+        );
+        by_team.insert(team_id, evaluation);
     }
 
     let mut results = Vec::new();
@@ -47,6 +67,13 @@ pub fn daemon_reconcile(db_path: &str, command: DaemonReconcileCommand) -> Resul
             continue;
         };
         let target = resolve_project_daemon_target(&project, &placement_map, &host_map);
+        let desired_state =
+            if project.enabled { team_state.desired_state } else { DaemonDesiredState::Stopped };
+        let reason = if project.enabled {
+            team_state.reason.clone()
+        } else {
+            format!("project disabled in fleet registry; team reason: {}", team_state.reason)
+        };
 
         let result = reconcile_project(
             target.controller(),
@@ -54,9 +81,11 @@ pub fn daemon_reconcile(db_path: &str, command: DaemonReconcileCommand) -> Resul
             project.id.clone(),
             project.ao_project_root.clone(),
             target.details(),
-            team_state.desired_state,
+            desired_state,
+            reason,
             team_state.backlog_count,
             team_state.schedule_ids.clone(),
+            team_state.override_applied.clone(),
             command.apply,
         )?;
 
@@ -89,13 +118,6 @@ pub fn daemon_reconcile(db_path: &str, command: DaemonReconcileCommand) -> Resul
     }))
 }
 
-#[derive(Debug, Clone)]
-struct TeamReconcileState {
-    desired_state: DaemonDesiredState,
-    backlog_count: usize,
-    schedule_ids: Vec<String>,
-}
-
 fn parse_backlog_map(values: Vec<String>) -> Result<BTreeMap<String, usize>> {
     let mut backlog_map = BTreeMap::new();
 
@@ -109,19 +131,21 @@ fn parse_backlog_map(values: Vec<String>) -> Result<BTreeMap<String, usize>> {
     Ok(backlog_map)
 }
 
-fn merge_desired_state(
-    current: DaemonDesiredState,
-    candidate: DaemonDesiredState,
-) -> DaemonDesiredState {
-    match (current, candidate) {
-        (DaemonDesiredState::Running, _) | (_, DaemonDesiredState::Running) => {
-            DaemonDesiredState::Running
-        }
-        (DaemonDesiredState::Paused, _) | (_, DaemonDesiredState::Paused) => {
-            DaemonDesiredState::Paused
-        }
-        _ => DaemonDesiredState::Stopped,
+fn group_schedules_by_team(schedules: Vec<Schedule>) -> BTreeMap<String, Vec<Schedule>> {
+    let mut schedules_by_team: BTreeMap<String, Vec<Schedule>> = BTreeMap::new();
+
+    for schedule in schedules {
+        schedules_by_team.entry(schedule.team_id.clone()).or_default().push(schedule);
     }
+
+    schedules_by_team
+}
+
+fn group_overrides_by_team(overrides: Vec<DaemonOverride>) -> BTreeMap<String, DaemonOverride> {
+    overrides
+        .into_iter()
+        .map(|override_record| (override_record.team_id.clone(), override_record))
+        .collect()
 }
 
 fn daemon_state_to_desired_state(state: DaemonState) -> DaemonDesiredState {

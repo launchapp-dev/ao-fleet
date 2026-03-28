@@ -3,9 +3,13 @@ use anyhow::Result;
 use crate::cli::handlers::audit_list::audit_list;
 use crate::cli::handlers::config_snapshot_export::config_snapshot_export;
 use crate::cli::handlers::config_snapshot_import::config_snapshot_import;
+use crate::cli::handlers::daemon_override_clear::daemon_override_clear;
+use crate::cli::handlers::daemon_override_list::daemon_override_list;
+use crate::cli::handlers::daemon_override_upsert::daemon_override_upsert;
 use crate::cli::handlers::daemon_reconcile::daemon_reconcile;
 use crate::cli::handlers::daemon_status::daemon_status;
 use crate::cli::handlers::db_init::db_init;
+use crate::cli::handlers::fleet_overview::fleet_overview;
 use crate::cli::handlers::host_create::host_create;
 use crate::cli::handlers::host_delete::host_delete;
 use crate::cli::handlers::host_get::host_get;
@@ -54,6 +58,7 @@ pub fn route_command(root: RootCommand) -> Result<()> {
         CommandGroup::ConfigSnapshotImport(command) => {
             config_snapshot_import(&root.db_path, command)
         }
+        CommandGroup::FleetOverview(command) => fleet_overview(&root.db_path, command),
         CommandGroup::HostCreate(command) => host_create(&root.db_path, command),
         CommandGroup::HostGet(command) => host_get(&root.db_path, command),
         CommandGroup::HostList(command) => host_list(&root.db_path, command),
@@ -94,6 +99,11 @@ pub fn route_command(root: RootCommand) -> Result<()> {
         CommandGroup::KnowledgeFactCreate(command) => knowledge_fact_create(&root.db_path, command),
         CommandGroup::KnowledgeFactList(command) => knowledge_fact_list(&root.db_path, command),
         CommandGroup::KnowledgeSearch(command) => knowledge_search(&root.db_path, command),
+        CommandGroup::DaemonOverrideUpsert(command) => {
+            daemon_override_upsert(&root.db_path, command)
+        }
+        CommandGroup::DaemonOverrideList(command) => daemon_override_list(&root.db_path, command),
+        CommandGroup::DaemonOverrideClear(command) => daemon_override_clear(&root.db_path, command),
         CommandGroup::DaemonStatus(command) => daemon_status(&root.db_path, command),
         CommandGroup::DaemonReconcile(command) => daemon_reconcile(&root.db_path, command),
         CommandGroup::McpList(command) => mcp_list(command),

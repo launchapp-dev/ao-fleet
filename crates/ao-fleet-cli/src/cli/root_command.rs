@@ -3,9 +3,13 @@ use clap::{Parser, Subcommand};
 use crate::cli::handlers::audit_list_command::AuditListCommand;
 use crate::cli::handlers::config_snapshot_export_command::ConfigSnapshotExportCommand;
 use crate::cli::handlers::config_snapshot_import_command::ConfigSnapshotImportCommand;
+use crate::cli::handlers::daemon_override_clear_command::DaemonOverrideClearCommand;
+use crate::cli::handlers::daemon_override_list_command::DaemonOverrideListCommand;
+use crate::cli::handlers::daemon_override_upsert_command::DaemonOverrideUpsertCommand;
 use crate::cli::handlers::daemon_reconcile_command::DaemonReconcileCommand;
 use crate::cli::handlers::daemon_status_command::DaemonStatusCommand;
 use crate::cli::handlers::db_init_command::DbInitCommand;
+use crate::cli::handlers::fleet_overview_command::FleetOverviewCommand;
 use crate::cli::handlers::host_create_command::HostCreateCommand;
 use crate::cli::handlers::host_delete_command::HostDeleteCommand;
 use crate::cli::handlers::host_get_command::HostGetCommand;
@@ -60,6 +64,7 @@ pub enum CommandGroup {
     AuditList(AuditListCommand),
     ConfigSnapshotExport(ConfigSnapshotExportCommand),
     ConfigSnapshotImport(ConfigSnapshotImportCommand),
+    FleetOverview(FleetOverviewCommand),
     HostCreate(HostCreateCommand),
     HostGet(HostGetCommand),
     HostList(HostListCommand),
@@ -94,6 +99,9 @@ pub enum CommandGroup {
     KnowledgeFactCreate(KnowledgeFactCreateCommand),
     KnowledgeFactList(KnowledgeFactListCommand),
     KnowledgeSearch(KnowledgeSearchCommand),
+    DaemonOverrideUpsert(DaemonOverrideUpsertCommand),
+    DaemonOverrideList(DaemonOverrideListCommand),
+    DaemonOverrideClear(DaemonOverrideClearCommand),
     DaemonStatus(DaemonStatusCommand),
     DaemonReconcile(DaemonReconcileCommand),
     McpList(McpListCommand),

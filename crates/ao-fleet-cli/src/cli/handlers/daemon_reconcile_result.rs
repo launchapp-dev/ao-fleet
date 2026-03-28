@@ -1,5 +1,5 @@
 use ao_fleet_ao::{DaemonCommandResult, DaemonState};
-use ao_fleet_core::DaemonDesiredState;
+use ao_fleet_core::{DaemonDesiredState, DaemonOverride};
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -10,8 +10,10 @@ pub struct DaemonReconcileResult {
     pub target: serde_json::Value,
     pub desired_state: DaemonDesiredState,
     pub observed_state: Option<DaemonState>,
+    pub reason: String,
     pub backlog_count: usize,
     pub schedule_ids: Vec<String>,
+    pub override_applied: Option<DaemonOverride>,
     pub action: Option<String>,
     pub command_result: Option<DaemonCommandResult>,
 }

@@ -1,5 +1,7 @@
 pub mod audit_event;
 pub mod daemon_desired_state;
+pub mod daemon_override;
+pub mod daemon_override_mode;
 pub mod host;
 pub mod knowledge_document;
 pub mod knowledge_document_kind;
@@ -10,6 +12,7 @@ pub mod knowledge_source;
 pub mod knowledge_source_kind;
 pub mod knowledge_sync_state;
 pub mod new_audit_event;
+pub mod new_daemon_override;
 pub mod new_host;
 pub mod new_project;
 pub mod new_schedule;

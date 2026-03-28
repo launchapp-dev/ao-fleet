@@ -1,4 +1,4 @@
-use ao_fleet_core::{Project, Schedule, Team};
+use ao_fleet_core::{DaemonOverride, Project, Schedule, Team};
 use serde::{Deserialize, Serialize};
 
 use crate::models::fleet_reconcile_preview_item::FleetReconcilePreviewItem;
@@ -10,5 +10,6 @@ pub struct FleetTeamOverview {
     pub summary: FleetTeamSummary,
     pub projects: Vec<Project>,
     pub schedules: Vec<Schedule>,
+    pub daemon_override: Option<DaemonOverride>,
     pub reconcile_preview: FleetReconcilePreviewItem,
 }

@@ -4,12 +4,11 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use ao_fleet_core::{
-    AuditEvent, DaemonDesiredState, Host, KnowledgeDocument, KnowledgeFact, KnowledgeScope,
-    KnowledgeSource, NewAuditEvent, NewHost, NewProject, NewSchedule, NewTeam,
-    ObservedDaemonStatus, Project, ProjectHostPlacement, Schedule, SchedulePolicyKind, Team,
-    WeekdayWindow,
+    AuditEvent, DaemonDesiredState, DaemonOverride, DaemonOverrideMode, Host, KnowledgeDocument,
+    KnowledgeFact, KnowledgeScope, KnowledgeSource, NewAuditEvent, NewDaemonOverride, NewHost,
+    NewProject, NewSchedule, NewTeam, ObservedDaemonStatus, Project, ProjectHostPlacement,
+    Schedule, SchedulePolicyKind, Team, WeekdayWindow,
 };
-use ao_fleet_scheduler::schedule_evaluator::ScheduleEvaluator;
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Row, params, types::Type};
 use serde::Serialize;
@@ -27,6 +26,7 @@ use crate::models::fleet_reconcile_preview_item::FleetReconcilePreviewItem;
 use crate::models::fleet_team_overview::FleetTeamOverview;
 use crate::models::fleet_team_summary::FleetTeamSummary;
 use crate::models::knowledge_record_query::KnowledgeRecordQuery;
+use crate::models::team_reconcile_evaluation::TeamReconcileEvaluation;
 
 const MIGRATION_SQL: &[&str] = &[
     include_str!("../sql/migrations/001_enable_foreign_keys.sql"),
@@ -36,6 +36,7 @@ const MIGRATION_SQL: &[&str] = &[
     include_str!("../sql/migrations/005_create_observed_daemon_statuses.sql"),
     include_str!("../sql/migrations/006_create_hosts_and_placements.sql"),
     include_str!("../sql/migrations/007_add_project_remote_url.sql"),
+    include_str!("../sql/migrations/008_create_daemon_overrides.sql"),
 ];
 
 #[derive(Debug, Clone)]
@@ -91,6 +92,124 @@ impl FleetStore {
         let mut stmt = conn.prepare(include_str!("../sql/audit_event/list.sql"))?;
         let rows = stmt.query_map(params![team_id, limit as i64], audit_event_from_row)?;
         collect_rows(rows)
+    }
+
+    pub fn upsert_daemon_override(
+        &self,
+        input: NewDaemonOverride,
+    ) -> Result<DaemonOverride, StoreError> {
+        input.validate()?;
+        let existing = self.get_daemon_override(&input.team_id)?;
+        let was_existing = existing.is_some();
+        let now = Utc::now();
+        let override_record = DaemonOverride {
+            id: existing
+                .as_ref()
+                .map(|record| record.id.clone())
+                .unwrap_or_else(|| new_id("daemon_override")),
+            team_id: input.team_id,
+            mode: input.mode,
+            forced_state: input.forced_state,
+            pause_until: input.pause_until,
+            note: input.note,
+            source: input.source,
+            created_at: existing.as_ref().map(|record| record.created_at).unwrap_or(now),
+            updated_at: now,
+        };
+        validate_daemon_override(&override_record)?;
+        let mode_text = override_mode_to_text(override_record.mode).to_string();
+        let forced_state_text =
+            override_record.forced_state.map(desired_state_to_text).map(String::from);
+        let pause_until_text = override_record.pause_until.map(|value| value.to_rfc3339());
+        let note = override_record.note.clone();
+        let source = override_record.source.clone();
+        let id = override_record.id.clone();
+        let team_id = override_record.team_id.clone();
+
+        let mut conn = self.connection()?;
+        let tx = conn.transaction()?;
+        tx.execute(
+            include_str!("../sql/daemon_override/upsert.sql"),
+            params![
+                id.clone(),
+                team_id.clone(),
+                mode_text.clone(),
+                forced_state_text.clone(),
+                pause_until_text.clone(),
+                note.clone(),
+                source.clone(),
+                override_record.created_at.to_rfc3339(),
+                override_record.updated_at.to_rfc3339(),
+            ],
+        )?;
+
+        record_audit_event(
+            &tx,
+            NewAuditEvent {
+                team_id: Some(team_id.clone()),
+                entity_type: "daemon_override".to_string(),
+                entity_id: id.clone(),
+                action: if was_existing { "updated" } else { "created" }.to_string(),
+                actor_type: "system".to_string(),
+                actor_id: None,
+                summary: format!(
+                    "{} founder override for team {team_id}",
+                    if was_existing { "Updated" } else { "Created" }
+                ),
+                details: serde_json::json!({
+                    "mode": mode_text,
+                    "forced_state": forced_state_text,
+                    "pause_until": pause_until_text,
+                    "note": note,
+                    "source": source,
+                }),
+            },
+        )?;
+        tx.commit()?;
+
+        Ok(override_record)
+    }
+
+    pub fn list_daemon_overrides(&self) -> Result<Vec<DaemonOverride>, StoreError> {
+        let conn = self.connection()?;
+        let mut stmt = conn.prepare(include_str!("../sql/daemon_override/list.sql"))?;
+        let rows = stmt.query_map([], daemon_override_from_row)?;
+        collect_rows(rows)
+    }
+
+    pub fn get_daemon_override(&self, team_id: &str) -> Result<Option<DaemonOverride>, StoreError> {
+        let conn = self.connection()?;
+        conn.query_row(
+            include_str!("../sql/daemon_override/get_by_team.sql"),
+            params![team_id],
+            daemon_override_from_row,
+        )
+        .optional()
+        .map_err(Into::into)
+    }
+
+    pub fn clear_daemon_override(&self, team_id: &str) -> Result<bool, StoreError> {
+        let mut conn = self.connection()?;
+        let tx = conn.transaction()?;
+        let changed = tx
+            .execute(include_str!("../sql/daemon_override/delete_by_team.sql"), params![team_id])?;
+        if changed > 0 {
+            record_audit_event(
+                &tx,
+                NewAuditEvent {
+                    team_id: Some(team_id.to_string()),
+                    entity_type: "daemon_override".to_string(),
+                    entity_id: team_id.to_string(),
+                    action: "cleared".to_string(),
+                    actor_type: "system".to_string(),
+                    actor_id: None,
+                    summary: format!("Cleared founder override for team {team_id}"),
+                    details: serde_json::json!({}),
+                },
+            )?;
+            tx.commit()?;
+        }
+        Ok(changed > 0)
     }
 
     pub fn create_host(&self, input: NewHost) -> Result<Host, StoreError> {
@@ -360,10 +479,63 @@ impl FleetStore {
         &self,
         team_id: Option<&str>,
     ) -> Result<Vec<FleetDaemonStatus>, StoreError> {
-        let conn = self.connection()?;
-        let mut stmt = conn.prepare(include_str!("../sql/observed_daemon_status/list_view.sql"))?;
-        let rows = stmt.query_map(params![team_id], fleet_daemon_status_from_row)?;
-        collect_rows(rows)
+        let evaluated_at = Utc::now();
+        let teams = self
+            .list_teams()?
+            .into_iter()
+            .filter(|team| team_id.map_or(true, |value| team.id == value))
+            .map(|team| (team.id.clone(), team))
+            .collect::<BTreeMap<_, _>>();
+        let projects = self.list_projects(team_id)?;
+        let schedules = self.list_schedules(team_id)?;
+        let overrides = self
+            .list_daemon_overrides()?
+            .into_iter()
+            .filter(|override_record| {
+                team_id.map_or(true, |value| override_record.team_id == value)
+                    && override_record.is_active(evaluated_at)
+            })
+            .collect::<Vec<_>>();
+        let observed_statuses = self.list_observed_daemon_statuses(team_id)?;
+
+        let desired_by_team =
+            desired_state_by_team(schedules, overrides, evaluated_at, BTreeMap::new());
+        let observed_by_project = observed_statuses
+            .into_iter()
+            .map(|status| (status.project_id.clone(), status))
+            .collect::<BTreeMap<_, _>>();
+
+        let mut rows = Vec::with_capacity(projects.len());
+        for project in projects {
+            let observed_status = observed_by_project.get(&project.id);
+            rows.push(FleetDaemonStatus {
+                team_id: project.team_id.clone(),
+                team_slug: teams
+                    .get(&project.team_id)
+                    .map(|team| team.slug.clone())
+                    .unwrap_or_else(|| "unknown".to_string()),
+                project_id: project.id.clone(),
+                project_slug: project.slug.clone(),
+                project_root: project.ao_project_root.clone(),
+                desired_state: if project.enabled {
+                    desired_by_team
+                        .get(&project.team_id)
+                        .map(|evaluation| evaluation.desired_state)
+                        .unwrap_or(DaemonDesiredState::Stopped)
+                } else {
+                    DaemonDesiredState::Stopped
+                },
+                observed_state: observed_status.map(|status| status.observed_state),
+                checked_at: observed_status.map(|status| status.checked_at),
+                source: observed_status.map(|status| status.source.clone()),
+                details: observed_status.map(|status| status.details.clone()),
+            });
+        }
+
+        rows.sort_by(|left, right| {
+            left.team_slug.cmp(&right.team_slug).then(left.project_slug.cmp(&right.project_slug))
+        });
+        Ok(rows)
     }
 
     pub fn upsert_knowledge_source(
@@ -1099,6 +1271,14 @@ impl FleetStore {
             .collect::<Vec<_>>();
         let projects = self.list_projects(team_filter)?;
         let schedules = self.list_schedules(team_filter)?;
+        let overrides = self
+            .list_daemon_overrides()?
+            .into_iter()
+            .filter(|override_record| {
+                team_filter.map_or(true, |team_id| override_record.team_id == team_id)
+                    && override_record.is_active(evaluated_at)
+            })
+            .collect::<Vec<_>>();
 
         let mut projects_by_team: BTreeMap<String, Vec<Project>> = BTreeMap::new();
         for project in projects {
@@ -1106,8 +1286,8 @@ impl FleetStore {
         }
 
         let mut schedules_by_team: BTreeMap<String, Vec<Schedule>> = BTreeMap::new();
-        for schedule in schedules {
-            schedules_by_team.entry(schedule.team_id.clone()).or_default().push(schedule);
+        for schedule in &schedules {
+            schedules_by_team.entry(schedule.team_id.clone()).or_default().push(schedule.clone());
         }
 
         let stored_observed_state_by_team = if query.observed_state_by_team.is_empty() {
@@ -1124,13 +1304,33 @@ impl FleetStore {
         let mut enabled_project_count = 0_usize;
         let mut enabled_schedule_count = 0_usize;
 
+        let desired_by_team = desired_state_by_team(
+            schedules.clone(),
+            overrides.clone(),
+            evaluated_at,
+            query.backlog_by_team.clone(),
+        );
+        let override_by_team = overrides
+            .into_iter()
+            .map(|override_record| (override_record.team_id.clone(), override_record))
+            .collect::<BTreeMap<_, _>>();
+
         for team in teams {
             team_count += 1;
             let team_projects = projects_by_team.remove(&team.id).unwrap_or_default();
             let team_schedules = schedules_by_team.remove(&team.id).unwrap_or_default();
             let backlog_count = query.backlog_by_team.get(&team.id).copied().unwrap_or(0);
-            let desired_state =
-                reconcile_desired_state(&team_schedules, evaluated_at, backlog_count);
+            let reconcile_evaluation =
+                desired_by_team.get(&team.id).cloned().unwrap_or_else(|| {
+                    TeamReconcileEvaluation::evaluate(
+                        team.id.clone(),
+                        &team_schedules,
+                        None,
+                        evaluated_at,
+                        backlog_count,
+                    )
+                });
+            let desired_state = reconcile_evaluation.desired_state;
             let observed_state = query
                 .observed_state_by_team
                 .get(&team.id)
@@ -1145,7 +1345,9 @@ impl FleetStore {
                 observed_state,
                 action: reconcile_action(desired_state, observed_state),
                 backlog_count,
-                schedule_ids: team_schedules.iter().map(|schedule| schedule.id.clone()).collect(),
+                schedule_ids: reconcile_evaluation.schedule_ids.clone(),
+                reason: reconcile_evaluation.reason.clone(),
+                override_applied: reconcile_evaluation.override_applied.clone(),
             };
 
             let summary = FleetTeamSummary {
@@ -1173,6 +1375,7 @@ impl FleetStore {
                 summary,
                 projects: team_projects,
                 schedules: team_schedules,
+                daemon_override: override_by_team.get(&reconcile_preview.team_id).cloned(),
                 reconcile_preview,
             });
         }
@@ -1268,17 +1471,6 @@ fn enum_from_text_sql<T: DeserializeOwned>(column: usize, value: String) -> rusq
     })
 }
 
-fn reconcile_desired_state(
-    schedules: &[Schedule],
-    evaluated_at: DateTime<Utc>,
-    backlog_count: usize,
-) -> DaemonDesiredState {
-    schedules.iter().fold(DaemonDesiredState::Stopped, |current, schedule| {
-        let desired_state = ScheduleEvaluator::evaluate(schedule, evaluated_at, backlog_count);
-        merge_desired_state(current, desired_state)
-    })
-}
-
 fn merge_desired_state(
     current: DaemonDesiredState,
     candidate: DaemonDesiredState,
@@ -1344,6 +1536,51 @@ fn observed_state_by_team(
     states
 }
 
+fn desired_state_by_team(
+    schedules: Vec<Schedule>,
+    overrides: Vec<DaemonOverride>,
+    evaluated_at: DateTime<Utc>,
+    backlog_by_team: BTreeMap<String, usize>,
+) -> BTreeMap<String, TeamReconcileEvaluation> {
+    let mut schedules_by_team: BTreeMap<String, Vec<Schedule>> = BTreeMap::new();
+    for schedule in schedules {
+        schedules_by_team.entry(schedule.team_id.clone()).or_default().push(schedule);
+    }
+
+    let mut overrides_by_team = BTreeMap::new();
+    for override_record in overrides {
+        overrides_by_team.insert(override_record.team_id.clone(), override_record);
+    }
+
+    let mut desired_by_team = BTreeMap::new();
+    for (team_id, team_schedules) in schedules_by_team {
+        let backlog_count = backlog_by_team.get(&team_id).copied().unwrap_or(0);
+        let evaluation = TeamReconcileEvaluation::evaluate(
+            team_id.clone(),
+            &team_schedules,
+            overrides_by_team.get(&team_id),
+            evaluated_at,
+            backlog_count,
+        );
+        desired_by_team.insert(team_id, evaluation);
+    }
+
+    for (team_id, override_record) in overrides_by_team {
+        desired_by_team.entry(team_id.clone()).or_insert_with(|| {
+            let backlog_count = backlog_by_team.get(&team_id).copied().unwrap_or(0);
+            TeamReconcileEvaluation::evaluate(
+                team_id,
+                &[],
+                Some(&override_record),
+                evaluated_at,
+                backlog_count,
+            )
+        });
+    }
+
+    desired_by_team
+}
+
 fn host_from_row(row: &Row<'_>) -> Result<Host, rusqlite::Error> {
     Ok(Host {
         id: row.get(0)?,
@@ -1394,30 +1631,20 @@ fn observed_daemon_status_from_row(row: &Row<'_>) -> Result<ObservedDaemonStatus
     })
 }
 
-fn fleet_daemon_status_from_row(row: &Row<'_>) -> Result<FleetDaemonStatus, rusqlite::Error> {
-    let details = row
-        .get::<_, Option<String>>(9)?
-        .map(|value| {
-            serde_json::from_str(&value).map_err(|error| {
-                rusqlite::Error::FromSqlConversionFailure(9, Type::Text, Box::new(error))
-            })
-        })
-        .transpose()?;
-
-    Ok(FleetDaemonStatus {
-        team_id: row.get(0)?,
-        team_slug: row.get(1)?,
-        project_id: row.get(2)?,
-        project_slug: row.get(3)?,
-        project_root: row.get(4)?,
-        desired_state: enum_from_text_sql(5, row.get::<_, String>(5)?)?,
-        observed_state: row
-            .get::<_, Option<String>>(6)?
-            .map(|value| enum_from_text_sql(6, value))
+fn daemon_override_from_row(row: &Row<'_>) -> Result<DaemonOverride, rusqlite::Error> {
+    Ok(DaemonOverride {
+        id: row.get(0)?,
+        team_id: row.get(1)?,
+        mode: override_mode_from_text_sql(row.get::<_, String>(2)?)?,
+        forced_state: row
+            .get::<_, Option<String>>(3)?
+            .map(desired_state_from_text_sql)
             .transpose()?,
-        checked_at: parse_optional_datetime_sql(7, row.get::<_, Option<String>>(7)?)?,
-        source: row.get(8)?,
-        details,
+        pause_until: parse_optional_datetime_sql(4, row.get::<_, Option<String>>(4)?)?,
+        note: row.get(5)?,
+        source: row.get(6)?,
+        created_at: parse_datetime_sql(7, row.get::<_, String>(7)?)?,
+        updated_at: parse_datetime_sql(8, row.get::<_, String>(8)?)?,
     })
 }
 
@@ -1438,6 +1665,40 @@ fn policy_kind_to_text(policy_kind: SchedulePolicyKind) -> &'static str {
         SchedulePolicyKind::ManualOnly => "manual_only",
         SchedulePolicyKind::BurstOnBacklog => "burst_on_backlog",
     }
+}
+
+fn override_mode_to_text(mode: DaemonOverrideMode) -> &'static str {
+    match mode {
+        DaemonOverrideMode::ForceDesiredState => "force_desired_state",
+        DaemonOverrideMode::FreezeUntil => "freeze_until",
+    }
+}
+
+fn override_mode_from_text_sql(value: String) -> rusqlite::Result<DaemonOverrideMode> {
+    match value.as_str() {
+        "force_desired_state" => Ok(DaemonOverrideMode::ForceDesiredState),
+        "freeze_until" => Ok(DaemonOverrideMode::FreezeUntil),
+        other => Err(rusqlite::Error::FromSqlConversionFailure(
+            2,
+            Type::Text,
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("unknown daemon override mode: {other}"),
+            )),
+        )),
+    }
+}
+
+fn desired_state_to_text(state: DaemonDesiredState) -> &'static str {
+    match state {
+        DaemonDesiredState::Running => "running",
+        DaemonDesiredState::Paused => "paused",
+        DaemonDesiredState::Stopped => "stopped",
+    }
+}
+
+fn desired_state_from_text_sql(value: String) -> rusqlite::Result<DaemonDesiredState> {
+    enum_from_text_sql(3, value)
 }
 
 fn policy_kind_from_text_sql(value: String) -> rusqlite::Result<SchedulePolicyKind> {
@@ -1480,6 +1741,17 @@ fn validate_project(project: &Project) -> Result<(), StoreError> {
         || project.default_branch.trim().is_empty()
     {
         return Err(StoreError::validation("project fields cannot be empty"));
+    }
+
+    Ok(())
+}
+
+fn validate_daemon_override(override_record: &DaemonOverride) -> Result<(), StoreError> {
+    if override_record.id.trim().is_empty()
+        || override_record.team_id.trim().is_empty()
+        || override_record.source.trim().is_empty()
+    {
+        return Err(StoreError::validation("daemon override fields cannot be empty"));
     }
 
     Ok(())

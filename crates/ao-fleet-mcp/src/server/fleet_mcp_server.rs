@@ -113,6 +113,11 @@ impl<H: FleetMcpApi> FleetMcpServer<H> {
             "fleet.daemon.status" => self.to_tool_result(
                 self.handlers.daemon_statuses(parse_optional_input(call.arguments)?)?,
             ),
+            "fleet.host.list" => self
+                .to_tool_result(self.handlers.list_hosts(parse_optional_input(call.arguments)?)?),
+            "fleet.host.get" => {
+                self.to_tool_result(self.handlers.get_host(parse_required_input(call.arguments)?)?)
+            }
             "fleet.knowledge.search" => self.to_tool_result(
                 self.handlers.search_knowledge(parse_optional_input(call.arguments)?)?,
             ),
@@ -144,11 +149,32 @@ impl<H: FleetMcpApi> FleetMcpServer<H> {
             "fleet.project.create" => self.to_tool_result(
                 self.handlers.create_project(parse_required_input(call.arguments)?)?,
             ),
+            "fleet.project.host.list" => self.to_tool_result(
+                self.handlers
+                    .list_project_host_placements(parse_optional_input(call.arguments)?)?,
+            ),
+            "fleet.project.host.assign" => self.to_tool_result(
+                self.handlers
+                    .assign_project_host_placement(parse_required_input(call.arguments)?)?,
+            ),
+            "fleet.project.host.clear" => self.to_tool_result(
+                self.handlers
+                    .clear_project_host_placement(parse_required_input(call.arguments)?)?,
+            ),
             "fleet.schedule.list" => self.to_tool_result(
                 self.handlers.list_schedules(parse_optional_input(call.arguments)?)?,
             ),
             "fleet.schedule.create" => self.to_tool_result(
                 self.handlers.create_schedule(parse_required_input(call.arguments)?)?,
+            ),
+            "fleet.daemon.override.list" => self.to_tool_result(
+                self.handlers.list_daemon_overrides(parse_optional_input(call.arguments)?)?,
+            ),
+            "fleet.daemon.override.set" => self.to_tool_result(
+                self.handlers.upsert_daemon_override(parse_required_input(call.arguments)?)?,
+            ),
+            "fleet.daemon.override.clear" => self.to_tool_result(
+                self.handlers.clear_daemon_override(parse_required_input(call.arguments)?)?,
             ),
             "fleet.daemon.reconcile" => self.to_tool_result(
                 self.handlers.reconcile_daemons(parse_optional_input(call.arguments)?)?,
@@ -297,9 +323,10 @@ mod tests {
     use std::cell::RefCell;
 
     use ao_fleet_core::{
-        DaemonDesiredState, KnowledgeDocument, KnowledgeDocumentKind, KnowledgeFact,
-        KnowledgeFactKind, KnowledgeScope, KnowledgeSource, KnowledgeSourceKind,
-        KnowledgeSyncState, Project, Schedule, SchedulePolicyKind, Team, WeekdayWindow,
+        DaemonDesiredState, DaemonOverride, DaemonOverrideMode, Host, KnowledgeDocument,
+        KnowledgeDocumentKind, KnowledgeFact, KnowledgeFactKind, KnowledgeScope, KnowledgeSource,
+        KnowledgeSourceKind, KnowledgeSyncState, Project, ProjectHostPlacement, Schedule,
+        SchedulePolicyKind, Team, WeekdayWindow,
     };
     use chrono::Utc;
 
@@ -401,6 +428,7 @@ mod tests {
                         created_at: Utc::now(),
                         updated_at: Utc::now(),
                     }],
+                    daemon_override: None,
                     reconcile_preview: FleetReconcilePreviewItem {
                         team_id: "team-1".to_string(),
                         team_slug: "marketing".to_string(),
@@ -409,6 +437,10 @@ mod tests {
                         action: FleetReconcileAction::Resume,
                         backlog_count,
                         schedule_ids: vec!["schedule-1".to_string()],
+                        reason:
+                            "always_on schedule keeps the daemon running at 2025-03-03T10:00:00Z"
+                                .to_string(),
+                        override_applied: None,
                     },
                 }],
                 preview: FleetReconcilePreview {
@@ -421,6 +453,10 @@ mod tests {
                         action: FleetReconcileAction::Resume,
                         backlog_count,
                         schedule_ids: vec!["schedule-1".to_string()],
+                        reason:
+                            "always_on schedule keeps the daemon running at 2025-03-03T10:00:00Z"
+                                .to_string(),
+                        override_applied: None,
                     }],
                 },
             })
@@ -443,6 +479,42 @@ mod tests {
                 source: Some("ao-cli".to_string()),
                 details: Some(serde_json::json!({"raw_state": "paused"})),
             }])
+        }
+
+        fn list_hosts(
+            &self,
+            _input: crate::inputs::host_list_input::HostListInput,
+        ) -> Result<Vec<Host>, FleetMcpError> {
+            self.calls.borrow_mut().push("list_hosts".to_string());
+            Ok(vec![Host {
+                id: "host-1".to_string(),
+                slug: "founder".to_string(),
+                name: "Founder".to_string(),
+                address: "http://host.test:7444".to_string(),
+                platform: "macos".to_string(),
+                status: "healthy".to_string(),
+                capacity_slots: 2,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            }])
+        }
+
+        fn get_host(
+            &self,
+            input: crate::inputs::host_get_input::HostGetInput,
+        ) -> Result<Option<Host>, FleetMcpError> {
+            self.calls.borrow_mut().push(format!("get_host:{}", input.id));
+            Ok(Some(Host {
+                id: input.id,
+                slug: "founder".to_string(),
+                name: "Founder".to_string(),
+                address: "http://host.test:7444".to_string(),
+                platform: "macos".to_string(),
+                status: "healthy".to_string(),
+                capacity_slots: 2,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            }))
         }
 
         fn list_teams(&self, _input: TeamListInput) -> Result<Vec<Team>, FleetMcpError> {
@@ -687,6 +759,88 @@ mod tests {
             })
         }
 
+        fn list_project_host_placements(
+            &self,
+            _input: crate::inputs::project_host_placement_list_input::ProjectHostPlacementListInput,
+        ) -> Result<Vec<ProjectHostPlacement>, FleetMcpError> {
+            self.calls.borrow_mut().push("list_project_host_placements".to_string());
+            Ok(vec![ProjectHostPlacement {
+                project_id: "project-1".to_string(),
+                host_id: "host-1".to_string(),
+                assignment_source: "founder".to_string(),
+                assigned_at: Utc::now(),
+            }])
+        }
+
+        fn assign_project_host_placement(
+            &self,
+            input: crate::inputs::project_host_placement_assign_input::ProjectHostPlacementAssignInput,
+        ) -> Result<ProjectHostPlacement, FleetMcpError> {
+            self.calls
+                .borrow_mut()
+                .push(format!("assign_project_host_placement:{}", input.project_id));
+            Ok(ProjectHostPlacement {
+                project_id: input.project_id,
+                host_id: input.host_id,
+                assignment_source: input.assignment_source,
+                assigned_at: Utc::now(),
+            })
+        }
+
+        fn clear_project_host_placement(
+            &self,
+            input: crate::inputs::project_host_placement_clear_input::ProjectHostPlacementClearInput,
+        ) -> Result<bool, FleetMcpError> {
+            self.calls
+                .borrow_mut()
+                .push(format!("clear_project_host_placement:{}", input.project_id));
+            Ok(true)
+        }
+
+        fn list_daemon_overrides(
+            &self,
+            _input: crate::inputs::daemon_override_list_input::DaemonOverrideListInput,
+        ) -> Result<Vec<DaemonOverride>, FleetMcpError> {
+            self.calls.borrow_mut().push("list_daemon_overrides".to_string());
+            Ok(vec![DaemonOverride {
+                id: "override-1".to_string(),
+                team_id: "team-1".to_string(),
+                mode: DaemonOverrideMode::ForceDesiredState,
+                forced_state: Some(DaemonDesiredState::Running),
+                pause_until: None,
+                note: Some("Founder's override".to_string()),
+                source: "founder".to_string(),
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            }])
+        }
+
+        fn upsert_daemon_override(
+            &self,
+            input: crate::inputs::daemon_override_upsert_input::DaemonOverrideUpsertInput,
+        ) -> Result<DaemonOverride, FleetMcpError> {
+            self.calls.borrow_mut().push(format!("upsert_daemon_override:{}", input.team_id));
+            Ok(DaemonOverride {
+                id: "override-2".to_string(),
+                team_id: input.team_id,
+                mode: input.mode,
+                forced_state: input.forced_state,
+                pause_until: input.pause_until,
+                note: input.note,
+                source: input.source,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            })
+        }
+
+        fn clear_daemon_override(
+            &self,
+            input: crate::inputs::daemon_override_clear_input::DaemonOverrideClearInput,
+        ) -> Result<bool, FleetMcpError> {
+            self.calls.borrow_mut().push(format!("clear_daemon_override:{}", input.team_id));
+            Ok(true)
+        }
+
         fn reconcile_daemons(
             &self,
             input: DaemonReconcileInput,
@@ -700,6 +854,9 @@ mod tests {
                     desired_state: DaemonDesiredState::Running,
                     backlog_count: 1,
                     schedule_ids: vec!["schedule-1".to_string()],
+                    reason: "always_on schedule keeps the daemon running at 2025-03-03T10:00:00Z"
+                        .to_string(),
+                    override_applied: None,
                 }],
             })
         }

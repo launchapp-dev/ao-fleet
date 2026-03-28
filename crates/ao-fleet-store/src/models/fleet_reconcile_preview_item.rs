@@ -1,4 +1,4 @@
-use ao_fleet_core::DaemonDesiredState;
+use ao_fleet_core::{DaemonDesiredState, DaemonOverride};
 use serde::{Deserialize, Serialize};
 
 use crate::models::fleet_reconcile_action::FleetReconcileAction;
@@ -12,4 +12,6 @@ pub struct FleetReconcilePreviewItem {
     pub action: FleetReconcileAction,
     pub backlog_count: usize,
     pub schedule_ids: Vec<String>,
+    pub reason: String,
+    pub override_applied: Option<DaemonOverride>,
 }
