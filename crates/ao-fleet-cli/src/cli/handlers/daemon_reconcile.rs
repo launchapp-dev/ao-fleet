@@ -17,8 +17,9 @@ use crate::cli::handlers::project_daemon_target::{
 
 pub fn daemon_reconcile(db_path: &str, command: DaemonReconcileCommand) -> Result<()> {
     let store = FleetStore::open(db_path)?;
-    let schedules = store.list_schedules(None)?;
-    let projects = store.list_projects(None)?;
+    let team_filter = command.team_id.as_deref();
+    let schedules = store.list_schedules(team_filter)?;
+    let projects = store.list_projects(team_filter)?;
     let placement_map = build_project_host_placement_map(store.list_project_host_placements()?);
     let host_map = build_host_map(store.list_hosts()?);
     let backlog_map = parse_backlog_map(command.backlog)?;
@@ -82,6 +83,7 @@ pub fn daemon_reconcile(db_path: &str, command: DaemonReconcileCommand) -> Resul
 
     print_json(&serde_json::json!({
         "evaluated_at": at.to_rfc3339(),
+        "team_id": command.team_id,
         "apply": command.apply,
         "results": results
     }))

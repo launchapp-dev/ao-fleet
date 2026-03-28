@@ -5,6 +5,9 @@ pub struct DaemonReconcileCommand {
     #[arg(long)]
     pub at: Option<String>,
 
+    #[arg(long)]
+    pub team_id: Option<String>,
+
     #[arg(long, value_name = "team_id=count")]
     pub backlog: Vec<String>,
 
