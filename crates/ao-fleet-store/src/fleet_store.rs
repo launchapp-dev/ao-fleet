@@ -853,6 +853,20 @@ impl FleetStore {
             .map_err(Into::into)
     }
 
+    pub fn get_project_by_ao_project_root(
+        &self,
+        ao_project_root: &str,
+    ) -> Result<Option<Project>, StoreError> {
+        let conn = self.connection()?;
+        conn.query_row(
+            include_str!("../sql/project/get_by_ao_project_root.sql"),
+            params![ao_project_root],
+            project_from_row,
+        )
+        .optional()
+        .map_err(Into::into)
+    }
+
     pub fn update_project(&self, project: Project) -> Result<Project, StoreError> {
         validate_project(&project)?;
         let mut conn = self.connection()?;

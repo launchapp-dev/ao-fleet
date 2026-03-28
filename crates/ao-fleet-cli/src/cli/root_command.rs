@@ -20,9 +20,12 @@ use crate::cli::handlers::knowledge_source_list_command::KnowledgeSourceListComm
 use crate::cli::handlers::knowledge_source_upsert_command::KnowledgeSourceUpsertCommand;
 use crate::cli::handlers::mcp_list_command::McpListCommand;
 use crate::cli::handlers::mcp_serve_command::McpServeCommand;
+use crate::cli::handlers::project_ao_json_command::ProjectAoJsonCommand;
+use crate::cli::handlers::project_config_get_command::ProjectConfigGetCommand;
 use crate::cli::handlers::project_create_command::ProjectCreateCommand;
 use crate::cli::handlers::project_delete_command::ProjectDeleteCommand;
 use crate::cli::handlers::project_discover_command::ProjectDiscoverCommand;
+use crate::cli::handlers::project_events_command::ProjectEventsCommand;
 use crate::cli::handlers::project_get_command::ProjectGetCommand;
 use crate::cli::handlers::project_host_assign_command::ProjectHostAssignCommand;
 use crate::cli::handlers::project_host_clear_command::ProjectHostClearCommand;
@@ -68,7 +71,10 @@ pub enum CommandGroup {
     TeamUpdate(TeamUpdateCommand),
     TeamDelete(TeamDeleteCommand),
     ProjectCreate(ProjectCreateCommand),
+    ProjectAoJson(ProjectAoJsonCommand),
+    ProjectConfigGet(ProjectConfigGetCommand),
     ProjectDiscover(ProjectDiscoverCommand),
+    ProjectEvents(ProjectEventsCommand),
     ProjectGet(ProjectGetCommand),
     ProjectHostAssign(ProjectHostAssignCommand),
     ProjectHostClear(ProjectHostClearCommand),

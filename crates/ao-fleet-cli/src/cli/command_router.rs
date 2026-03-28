@@ -20,9 +20,12 @@ use crate::cli::handlers::knowledge_source_list::knowledge_source_list;
 use crate::cli::handlers::knowledge_source_upsert::knowledge_source_upsert;
 use crate::cli::handlers::mcp_list::mcp_list;
 use crate::cli::handlers::mcp_serve::mcp_serve;
+use crate::cli::handlers::project_ao_json::project_ao_json;
+use crate::cli::handlers::project_config_get::project_config_get;
 use crate::cli::handlers::project_create::project_create;
 use crate::cli::handlers::project_delete::project_delete;
 use crate::cli::handlers::project_discover::project_discover;
+use crate::cli::handlers::project_events::project_events;
 use crate::cli::handlers::project_get::project_get;
 use crate::cli::handlers::project_host_assign::project_host_assign;
 use crate::cli::handlers::project_host_clear::project_host_clear;
@@ -62,7 +65,10 @@ pub fn route_command(root: RootCommand) -> Result<()> {
         CommandGroup::TeamUpdate(command) => team_update(&root.db_path, command),
         CommandGroup::TeamDelete(command) => team_delete(&root.db_path, command),
         CommandGroup::ProjectCreate(command) => project_create(&root.db_path, command),
+        CommandGroup::ProjectAoJson(command) => project_ao_json(&root.db_path, command),
+        CommandGroup::ProjectConfigGet(command) => project_config_get(&root.db_path, command),
         CommandGroup::ProjectDiscover(command) => project_discover(&root.db_path, command),
+        CommandGroup::ProjectEvents(command) => project_events(&root.db_path, command),
         CommandGroup::ProjectGet(command) => project_get(&root.db_path, command),
         CommandGroup::ProjectHostAssign(command) => project_host_assign(&root.db_path, command),
         CommandGroup::ProjectHostClear(command) => project_host_clear(&root.db_path, command),
