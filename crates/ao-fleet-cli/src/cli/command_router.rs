@@ -10,6 +10,7 @@ use crate::cli::handlers::daemon_reconcile::daemon_reconcile;
 use crate::cli::handlers::daemon_status::daemon_status;
 use crate::cli::handlers::db_init::db_init;
 use crate::cli::handlers::fleet_overview::fleet_overview;
+use crate::cli::handlers::founder_overview::founder_overview;
 use crate::cli::handlers::host_create::host_create;
 use crate::cli::handlers::host_delete::host_delete;
 use crate::cli::handlers::host_get::host_get;
@@ -59,6 +60,7 @@ pub fn route_command(root: RootCommand) -> Result<()> {
             config_snapshot_import(&root.db_path, command)
         }
         CommandGroup::FleetOverview(command) => fleet_overview(&root.db_path, command),
+        CommandGroup::FounderOverview(command) => founder_overview(&root.db_path, command),
         CommandGroup::HostCreate(command) => host_create(&root.db_path, command),
         CommandGroup::HostGet(command) => host_get(&root.db_path, command),
         CommandGroup::HostList(command) => host_list(&root.db_path, command),

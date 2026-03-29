@@ -10,6 +10,7 @@ use crate::cli::handlers::daemon_reconcile_command::DaemonReconcileCommand;
 use crate::cli::handlers::daemon_status_command::DaemonStatusCommand;
 use crate::cli::handlers::db_init_command::DbInitCommand;
 use crate::cli::handlers::fleet_overview_command::FleetOverviewCommand;
+use crate::cli::handlers::founder_overview_command::FounderOverviewCommand;
 use crate::cli::handlers::host_create_command::HostCreateCommand;
 use crate::cli::handlers::host_delete_command::HostDeleteCommand;
 use crate::cli::handlers::host_get_command::HostGetCommand;
@@ -65,6 +66,7 @@ pub enum CommandGroup {
     ConfigSnapshotExport(ConfigSnapshotExportCommand),
     ConfigSnapshotImport(ConfigSnapshotImportCommand),
     FleetOverview(FleetOverviewCommand),
+    FounderOverview(FounderOverviewCommand),
     HostCreate(HostCreateCommand),
     HostGet(HostGetCommand),
     HostList(HostListCommand),

@@ -21,6 +21,8 @@ pub mod db_init_command;
 pub mod fleet_config_snapshot;
 pub mod fleet_overview;
 pub mod fleet_overview_command;
+pub mod founder_overview;
+pub mod founder_overview_command;
 pub mod host_create;
 pub mod host_create_command;
 pub mod host_delete;

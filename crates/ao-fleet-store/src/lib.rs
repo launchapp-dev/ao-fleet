@@ -13,5 +13,8 @@ pub use models::fleet_reconcile_preview::FleetReconcilePreview;
 pub use models::fleet_reconcile_preview_item::FleetReconcilePreviewItem;
 pub use models::fleet_team_overview::FleetTeamOverview;
 pub use models::fleet_team_summary::FleetTeamSummary;
+pub use models::founder_overview::FounderOverview;
+pub use models::founder_overview_summary::FounderOverviewSummary;
+pub use models::founder_team_overview::FounderTeamOverview;
 pub use models::knowledge_record_query::KnowledgeRecordQuery;
 pub use models::team_reconcile_evaluation::TeamReconcileEvaluation;

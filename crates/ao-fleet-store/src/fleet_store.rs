@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -25,6 +25,9 @@ use crate::models::fleet_reconcile_preview::FleetReconcilePreview;
 use crate::models::fleet_reconcile_preview_item::FleetReconcilePreviewItem;
 use crate::models::fleet_team_overview::FleetTeamOverview;
 use crate::models::fleet_team_summary::FleetTeamSummary;
+use crate::models::founder_overview::FounderOverview;
+use crate::models::founder_overview_summary::FounderOverviewSummary;
+use crate::models::founder_team_overview::FounderTeamOverview;
 use crate::models::knowledge_record_query::KnowledgeRecordQuery;
 use crate::models::team_reconcile_evaluation::TeamReconcileEvaluation;
 
@@ -38,6 +41,9 @@ const MIGRATION_SQL: &[&str] = &[
     include_str!("../sql/migrations/007_add_project_remote_url.sql"),
     include_str!("../sql/migrations/008_create_daemon_overrides.sql"),
 ];
+
+const FOUNDER_OVERVIEW_ACTIVITY_LIMIT: usize = 250;
+const FOUNDER_OVERVIEW_KNOWLEDGE_LIMIT: usize = 250;
 
 #[derive(Debug, Clone)]
 pub struct FleetStore {
@@ -1271,6 +1277,9 @@ impl FleetStore {
             .collect::<Vec<_>>();
         let projects = self.list_projects(team_filter)?;
         let schedules = self.list_schedules(team_filter)?;
+        let placements = self.list_project_host_placements()?;
+        let hosts = self.list_hosts()?;
+        let daemon_statuses = self.fleet_daemon_statuses(team_filter)?;
         let overrides = self
             .list_daemon_overrides()?
             .into_iter()
@@ -1281,13 +1290,45 @@ impl FleetStore {
             .collect::<Vec<_>>();
 
         let mut projects_by_team: BTreeMap<String, Vec<Project>> = BTreeMap::new();
+        let mut project_team_by_id: BTreeMap<String, String> = BTreeMap::new();
         for project in projects {
+            project_team_by_id.insert(project.id.clone(), project.team_id.clone());
             projects_by_team.entry(project.team_id.clone()).or_default().push(project);
         }
 
         let mut schedules_by_team: BTreeMap<String, Vec<Schedule>> = BTreeMap::new();
         for schedule in &schedules {
             schedules_by_team.entry(schedule.team_id.clone()).or_default().push(schedule.clone());
+        }
+
+        let mut placements_by_team: BTreeMap<String, Vec<ProjectHostPlacement>> = BTreeMap::new();
+        for placement in placements {
+            if let Some(team_id) = project_team_by_id.get(&placement.project_id) {
+                placements_by_team.entry(team_id.clone()).or_default().push(placement);
+            }
+        }
+
+        let host_by_id =
+            hosts.iter().cloned().map(|host| (host.id.clone(), host)).collect::<BTreeMap<_, _>>();
+
+        let mut hosts_by_team: BTreeMap<String, Vec<Host>> = BTreeMap::new();
+        for (team_id, team_placements) in &placements_by_team {
+            let mut team_hosts = Vec::new();
+            let mut seen_host_ids = std::collections::BTreeSet::new();
+            for placement in team_placements {
+                if !seen_host_ids.insert(placement.host_id.clone()) {
+                    continue;
+                }
+                if let Some(host) = host_by_id.get(&placement.host_id) {
+                    team_hosts.push(host.clone());
+                }
+            }
+            hosts_by_team.insert(team_id.clone(), team_hosts);
+        }
+
+        let mut daemon_statuses_by_team: BTreeMap<String, Vec<FleetDaemonStatus>> = BTreeMap::new();
+        for status in daemon_statuses {
+            daemon_statuses_by_team.entry(status.team_id.clone()).or_default().push(status);
         }
 
         let stored_observed_state_by_team = if query.observed_state_by_team.is_empty() {
@@ -1319,6 +1360,9 @@ impl FleetStore {
             team_count += 1;
             let team_projects = projects_by_team.remove(&team.id).unwrap_or_default();
             let team_schedules = schedules_by_team.remove(&team.id).unwrap_or_default();
+            let team_placements = placements_by_team.remove(&team.id).unwrap_or_default();
+            let team_hosts = hosts_by_team.remove(&team.id).unwrap_or_default();
+            let team_daemon_statuses = daemon_statuses_by_team.remove(&team.id).unwrap_or_default();
             let backlog_count = query.backlog_by_team.get(&team.id).copied().unwrap_or(0);
             let reconcile_evaluation =
                 desired_by_team.get(&team.id).cloned().unwrap_or_else(|| {
@@ -1364,6 +1408,18 @@ impl FleetStore {
                 backlog_count,
             };
 
+            let audit_events = self.list_audit_events(Some(&team.id), Some(8))?;
+            let knowledge_documents = self.list_knowledge_documents(KnowledgeRecordQuery {
+                scope: Some(KnowledgeScope::Team),
+                scope_ref: Some(team.id.clone()),
+                limit: 8,
+            })?;
+            let knowledge_facts = self.list_knowledge_facts(KnowledgeRecordQuery {
+                scope: Some(KnowledgeScope::Team),
+                scope_ref: Some(team.id.clone()),
+                limit: 12,
+            })?;
+
             project_count += summary.project_count;
             schedule_count += summary.schedule_count;
             enabled_project_count += summary.enabled_project_count;
@@ -1375,6 +1431,12 @@ impl FleetStore {
                 summary,
                 projects: team_projects,
                 schedules: team_schedules,
+                placements: team_placements,
+                hosts: team_hosts,
+                daemon_statuses: team_daemon_statuses,
+                audit_events,
+                knowledge_documents,
+                knowledge_facts,
                 daemon_override: override_by_team.get(&reconcile_preview.team_id).cloned(),
                 reconcile_preview,
             });
@@ -1391,6 +1453,134 @@ impl FleetStore {
             },
             teams: team_overviews,
             preview: FleetReconcilePreview { evaluated_at, items: preview_items },
+        })
+    }
+
+    pub fn founder_overview(
+        &self,
+        query: FleetOverviewQuery,
+    ) -> Result<FounderOverview, StoreError> {
+        let fleet = self.fleet_overview(query.clone())?;
+        let evaluated_at = fleet.evaluated_at;
+        let team_filter = query.team_id.as_deref();
+        let fleet_teams = fleet.teams.clone();
+        let project_team_by_id = project_team_map(&fleet_teams);
+
+        let hosts = self.list_hosts()?;
+        let project_host_placements = self.list_project_host_placements()?;
+        let daemon_statuses = self.fleet_daemon_statuses(team_filter)?;
+        let audit_events =
+            self.list_audit_events(team_filter, Some(FOUNDER_OVERVIEW_ACTIVITY_LIMIT))?;
+        let knowledge_query = KnowledgeRecordQuery {
+            scope: None,
+            scope_ref: None,
+            limit: FOUNDER_OVERVIEW_KNOWLEDGE_LIMIT,
+        };
+        let knowledge_documents = self.list_knowledge_documents(knowledge_query.clone())?;
+        let knowledge_facts = self.list_knowledge_facts(knowledge_query)?;
+
+        let project_host_placements = project_host_placements
+            .into_iter()
+            .filter(|placement| {
+                project_team_by_id.get(&placement.project_id).map_or(false, |team_id| {
+                    team_filter.map_or(true, |filter| filter == team_id.as_str())
+                })
+            })
+            .collect::<Vec<_>>();
+        let placement_count = project_host_placements.len();
+
+        let host_ids = project_host_placements
+            .iter()
+            .map(|placement| placement.host_id.clone())
+            .collect::<BTreeSet<_>>();
+        let hosts = hosts
+            .into_iter()
+            .filter(|host| team_filter.is_none() || host_ids.contains(&host.id))
+            .collect::<Vec<_>>();
+
+        let knowledge_documents = knowledge_documents
+            .into_iter()
+            .filter(|document| {
+                knowledge_record_team_id(
+                    &document.scope,
+                    document.scope_ref.as_deref(),
+                    &project_team_by_id,
+                )
+                .map_or(team_filter.is_none(), |team_id| {
+                    team_filter.map_or(true, |filter| filter == team_id.as_str())
+                })
+            })
+            .collect::<Vec<_>>();
+        let knowledge_facts = knowledge_facts
+            .into_iter()
+            .filter(|fact| {
+                knowledge_record_team_id(
+                    &fact.scope,
+                    fact.scope_ref.as_deref(),
+                    &project_team_by_id,
+                )
+                .map_or(team_filter.is_none(), |team_id| {
+                    team_filter.map_or(true, |filter| filter == team_id.as_str())
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let team_project_host_placements =
+            group_project_host_placements_by_team(&project_host_placements, &project_team_by_id);
+        let team_daemon_statuses = group_daemon_statuses_by_team(daemon_statuses.clone());
+        let team_audit_events = group_audit_events_by_team(audit_events.clone());
+        let team_knowledge_documents =
+            group_knowledge_documents_by_team(knowledge_documents.clone(), &project_team_by_id);
+        let team_knowledge_facts =
+            group_knowledge_facts_by_team(knowledge_facts.clone(), &project_team_by_id);
+
+        let teams = fleet_teams
+            .into_iter()
+            .filter(|team| team_filter.map_or(true, |filter| filter == team.team.id))
+            .map(|team| {
+                let team_id = team.team.id.clone();
+                FounderTeamOverview {
+                    fleet: team.clone(),
+                    project_host_placements: team_project_host_placements
+                        .get(&team_id)
+                        .cloned()
+                        .unwrap_or_default(),
+                    daemon_statuses: team_daemon_statuses
+                        .get(&team_id)
+                        .cloned()
+                        .unwrap_or_default(),
+                    audit_events: team_audit_events.get(&team_id).cloned().unwrap_or_default(),
+                    knowledge_documents: team_knowledge_documents
+                        .get(&team_id)
+                        .cloned()
+                        .unwrap_or_default(),
+                    knowledge_facts: team_knowledge_facts
+                        .get(&team_id)
+                        .cloned()
+                        .unwrap_or_default(),
+                }
+            })
+            .collect::<Vec<_>>();
+
+        Ok(FounderOverview {
+            evaluated_at,
+            summary: FounderOverviewSummary {
+                fleet: fleet.summary.clone(),
+                host_count: hosts.len(),
+                placement_count,
+                daemon_status_count: daemon_statuses.len(),
+                audit_event_count: audit_events.len(),
+                knowledge_document_count: knowledge_documents.len(),
+                knowledge_fact_count: knowledge_facts.len(),
+            },
+            fleet,
+            hosts,
+            project_host_placements,
+            daemon_statuses,
+            audit_events,
+            knowledge_documents,
+            knowledge_facts,
+            teams,
         })
     }
 
@@ -1534,6 +1724,107 @@ fn observed_state_by_team(
     }
 
     states
+}
+
+fn project_team_map(teams: &[FleetTeamOverview]) -> BTreeMap<String, String> {
+    let mut project_team_by_id = BTreeMap::new();
+
+    for team in teams {
+        for project in &team.projects {
+            project_team_by_id.insert(project.id.clone(), team.team.id.clone());
+        }
+    }
+
+    project_team_by_id
+}
+
+fn group_project_host_placements_by_team(
+    placements: &[ProjectHostPlacement],
+    project_team_by_id: &BTreeMap<String, String>,
+) -> BTreeMap<String, Vec<ProjectHostPlacement>> {
+    let mut grouped: BTreeMap<String, Vec<ProjectHostPlacement>> = BTreeMap::new();
+
+    for placement in placements {
+        if let Some(team_id) = project_team_by_id.get(&placement.project_id) {
+            grouped.entry(team_id.clone()).or_default().push(placement.clone());
+        }
+    }
+
+    grouped
+}
+
+fn group_daemon_statuses_by_team(
+    statuses: Vec<FleetDaemonStatus>,
+) -> BTreeMap<String, Vec<FleetDaemonStatus>> {
+    let mut grouped: BTreeMap<String, Vec<FleetDaemonStatus>> = BTreeMap::new();
+
+    for status in statuses {
+        grouped.entry(status.team_id.clone()).or_default().push(status);
+    }
+
+    grouped
+}
+
+fn group_audit_events_by_team(events: Vec<AuditEvent>) -> BTreeMap<String, Vec<AuditEvent>> {
+    let mut grouped: BTreeMap<String, Vec<AuditEvent>> = BTreeMap::new();
+
+    for event in events {
+        if let Some(team_id) = event.team_id.clone() {
+            grouped.entry(team_id).or_default().push(event);
+        }
+    }
+
+    grouped
+}
+
+fn group_knowledge_documents_by_team(
+    documents: Vec<KnowledgeDocument>,
+    project_team_by_id: &BTreeMap<String, String>,
+) -> BTreeMap<String, Vec<KnowledgeDocument>> {
+    let mut grouped: BTreeMap<String, Vec<KnowledgeDocument>> = BTreeMap::new();
+
+    for document in documents {
+        if let Some(team_id) = knowledge_record_team_id(
+            &document.scope,
+            document.scope_ref.as_deref(),
+            project_team_by_id,
+        ) {
+            grouped.entry(team_id).or_default().push(document);
+        }
+    }
+
+    grouped
+}
+
+fn group_knowledge_facts_by_team(
+    facts: Vec<KnowledgeFact>,
+    project_team_by_id: &BTreeMap<String, String>,
+) -> BTreeMap<String, Vec<KnowledgeFact>> {
+    let mut grouped: BTreeMap<String, Vec<KnowledgeFact>> = BTreeMap::new();
+
+    for fact in facts {
+        if let Some(team_id) =
+            knowledge_record_team_id(&fact.scope, fact.scope_ref.as_deref(), project_team_by_id)
+        {
+            grouped.entry(team_id).or_default().push(fact);
+        }
+    }
+
+    grouped
+}
+
+fn knowledge_record_team_id(
+    scope: &KnowledgeScope,
+    scope_ref: Option<&str>,
+    project_team_by_id: &BTreeMap<String, String>,
+) -> Option<String> {
+    match scope {
+        KnowledgeScope::Team => scope_ref.map(ToOwned::to_owned),
+        KnowledgeScope::Project => {
+            scope_ref.and_then(|project_id| project_team_by_id.get(project_id).cloned())
+        }
+        KnowledgeScope::Global | KnowledgeScope::Operational => None,
+    }
 }
 
 fn desired_state_by_team(
@@ -2080,9 +2371,10 @@ fn append_audit_event_with_connection(
 mod tests {
     use super::*;
     use ao_fleet_core::{
-        KnowledgeDocument, KnowledgeDocumentKind, KnowledgeFact, KnowledgeFactKind, KnowledgeScope,
-        KnowledgeSource, KnowledgeSourceKind, KnowledgeSyncState, NewAuditEvent, NewProject,
-        NewSchedule, NewTeam, SchedulePolicyKind, WeekdayWindow,
+        DaemonDesiredState, KnowledgeDocument, KnowledgeDocumentKind, KnowledgeFact,
+        KnowledgeFactKind, KnowledgeScope, KnowledgeSource, KnowledgeSourceKind,
+        KnowledgeSyncState, NewHost, NewProject, NewSchedule, NewTeam, ObservedDaemonStatus,
+        ProjectHostPlacement, SchedulePolicyKind, WeekdayWindow,
     };
     use chrono::{TimeZone, Utc};
     use serde_json::json;
@@ -2307,6 +2599,159 @@ mod tests {
         assert_eq!(overview.preview.items.len(), 1);
         assert_eq!(overview.preview.items[0].team_id, team.id);
         assert_eq!(overview.preview.items[0].action, FleetReconcileAction::Resume);
+    }
+
+    #[test]
+    fn founder_overview_aggregates_company_surface() {
+        let store = FleetStore::open_in_memory().expect("store opens");
+
+        let team = store
+            .create_team(NewTeam {
+                slug: "platform".to_string(),
+                name: "Platform".to_string(),
+                mission: "Own company systems".to_string(),
+                ownership: "engineering".to_string(),
+                business_priority: 9,
+            })
+            .expect("team created");
+
+        let project = store
+            .create_project(NewProject {
+                team_id: team.id.clone(),
+                slug: "ao-fleet".to_string(),
+                root_path: "/tmp/ao-fleet".to_string(),
+                ao_project_root: "/tmp/ao-fleet".to_string(),
+                default_branch: "main".to_string(),
+                remote_url: Some("https://example.com/ao-fleet.git".to_string()),
+                enabled: true,
+            })
+            .expect("project created");
+
+        store
+            .create_schedule(NewSchedule {
+                team_id: team.id.clone(),
+                timezone: "UTC".to_string(),
+                policy_kind: SchedulePolicyKind::AlwaysOn,
+                windows: vec![],
+                enabled: true,
+            })
+            .expect("schedule created");
+
+        let host = store
+            .create_host(NewHost {
+                slug: "local".to_string(),
+                name: "Local Host".to_string(),
+                address: "http://localhost:3000".to_string(),
+                platform: "linux".to_string(),
+                status: "healthy".to_string(),
+                capacity_slots: 8,
+            })
+            .expect("host created");
+
+        store
+            .upsert_project_host_placement(ProjectHostPlacement {
+                project_id: project.id.clone(),
+                host_id: host.id.clone(),
+                assignment_source: "manual".to_string(),
+                assigned_at: Utc::now(),
+            })
+            .expect("placement stored");
+
+        store
+            .upsert_observed_daemon_status(ObservedDaemonStatus {
+                project_id: project.id.clone(),
+                team_id: team.id.clone(),
+                observed_state: DaemonDesiredState::Running,
+                source: "test".to_string(),
+                checked_at: Utc::now(),
+                details: json!({"state": "running"}),
+            })
+            .expect("daemon status stored");
+
+        let source = store
+            .upsert_knowledge_source(KnowledgeSource {
+                id: String::new(),
+                kind: KnowledgeSourceKind::ManualNote,
+                label: "Operator note".to_string(),
+                uri: Some("file:///tmp/operator-note.md".to_string()),
+                scope: KnowledgeScope::Team,
+                scope_ref: Some(team.id.clone()),
+                sync_state: KnowledgeSyncState::Ready,
+                last_synced_at: Some(Utc::now()),
+                metadata: json!({"author": "ops"}),
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            })
+            .expect("knowledge source created");
+
+        store
+            .create_knowledge_document(KnowledgeDocument {
+                id: String::new(),
+                scope: KnowledgeScope::Team,
+                scope_ref: Some(team.id.clone()),
+                kind: KnowledgeDocumentKind::Runbook,
+                title: "Founders runbook".to_string(),
+                summary: "How to operate the company".to_string(),
+                body: "Keep the fleet stable.".to_string(),
+                source_id: Some(source.id.clone()),
+                source_kind: Some(KnowledgeSourceKind::ManualNote),
+                tags: vec!["ops".to_string()],
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            })
+            .expect("knowledge document created");
+
+        store
+            .create_knowledge_fact(KnowledgeFact {
+                id: String::new(),
+                scope: KnowledgeScope::Team,
+                scope_ref: Some(team.id.clone()),
+                kind: KnowledgeFactKind::Policy,
+                statement: "Platform owns the fleet control plane".to_string(),
+                confidence: 99,
+                source_id: Some(source.id.clone()),
+                source_kind: Some(KnowledgeSourceKind::ManualNote),
+                tags: vec!["policy".to_string()],
+                observed_at: Utc::now(),
+                created_at: Utc::now(),
+            })
+            .expect("knowledge fact created");
+
+        let overview = store
+            .founder_overview(FleetOverviewQuery {
+                team_id: None,
+                at: Some(Utc.with_ymd_and_hms(2025, 3, 3, 10, 0, 0).unwrap()),
+                backlog_by_team: std::collections::BTreeMap::new(),
+                observed_state_by_team: std::collections::BTreeMap::new(),
+            })
+            .expect("founder overview built");
+
+        assert_eq!(overview.summary.fleet.team_count, 1);
+        assert_eq!(overview.summary.fleet.project_count, 1);
+        assert_eq!(overview.summary.fleet.schedule_count, 1);
+        assert_eq!(overview.summary.fleet.enabled_project_count, 1);
+        assert_eq!(overview.summary.fleet.enabled_schedule_count, 1);
+        assert_eq!(overview.summary.host_count, 1);
+        assert_eq!(overview.summary.placement_count, 1);
+        assert_eq!(overview.summary.daemon_status_count, 1);
+        assert_eq!(overview.summary.audit_event_count, 8);
+        assert_eq!(overview.summary.knowledge_document_count, 1);
+        assert_eq!(overview.summary.knowledge_fact_count, 1);
+        assert_eq!(overview.hosts.len(), 1);
+        assert_eq!(overview.project_host_placements.len(), 1);
+        assert_eq!(overview.daemon_statuses.len(), 1);
+        assert_eq!(overview.audit_events.len(), 8);
+        assert_eq!(overview.knowledge_documents.len(), 1);
+        assert_eq!(overview.knowledge_facts.len(), 1);
+        assert_eq!(overview.teams.len(), 1);
+
+        let founder_team = &overview.teams[0];
+        assert_eq!(founder_team.fleet.team.id, team.id);
+        assert_eq!(founder_team.project_host_placements.len(), 1);
+        assert_eq!(founder_team.daemon_statuses.len(), 1);
+        assert_eq!(founder_team.audit_events.len(), 6);
+        assert_eq!(founder_team.knowledge_documents.len(), 1);
+        assert_eq!(founder_team.knowledge_facts.len(), 1);
     }
 
     #[test]

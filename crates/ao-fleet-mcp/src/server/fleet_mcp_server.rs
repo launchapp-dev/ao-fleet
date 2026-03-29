@@ -428,6 +428,12 @@ mod tests {
                         created_at: Utc::now(),
                         updated_at: Utc::now(),
                     }],
+                    placements: vec![],
+                    hosts: vec![],
+                    daemon_statuses: vec![],
+                    audit_events: vec![],
+                    knowledge_documents: vec![],
+                    knowledge_facts: vec![],
                     daemon_override: None,
                     reconcile_preview: FleetReconcilePreviewItem {
                         team_id: "team-1".to_string(),
