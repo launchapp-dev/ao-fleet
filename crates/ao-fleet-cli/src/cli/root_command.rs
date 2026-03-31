@@ -14,7 +14,12 @@ use crate::cli::handlers::founder_overview_command::FounderOverviewCommand;
 use crate::cli::handlers::host_create_command::HostCreateCommand;
 use crate::cli::handlers::host_delete_command::HostDeleteCommand;
 use crate::cli::handlers::host_get_command::HostGetCommand;
+use crate::cli::handlers::host_import_command::HostImportCommand;
 use crate::cli::handlers::host_list_command::HostListCommand;
+use crate::cli::handlers::host_log_stream_command::HostLogStreamCommand;
+use crate::cli::handlers::host_logs_command::HostLogsCommand;
+use crate::cli::handlers::host_sync_all_command::HostSyncAllCommand;
+use crate::cli::handlers::host_sync_command::HostSyncCommand;
 use crate::cli::handlers::host_update_command::HostUpdateCommand;
 use crate::cli::handlers::knowledge_document_create_command::KnowledgeDocumentCreateCommand;
 use crate::cli::handlers::knowledge_document_list_command::KnowledgeDocumentListCommand;
@@ -69,7 +74,12 @@ pub enum CommandGroup {
     FounderOverview(FounderOverviewCommand),
     HostCreate(HostCreateCommand),
     HostGet(HostGetCommand),
+    HostImport(HostImportCommand),
+    HostLogs(HostLogsCommand),
+    HostLogStream(HostLogStreamCommand),
     HostList(HostListCommand),
+    HostSync(HostSyncCommand),
+    HostSyncAll(HostSyncAllCommand),
     HostUpdate(HostUpdateCommand),
     HostDelete(HostDeleteCommand),
     TeamCreate(TeamCreateCommand),

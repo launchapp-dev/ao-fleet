@@ -1,4 +1,10 @@
 pub mod daemon_command_result;
 pub mod daemon_start_options;
 pub mod daemon_state;
+pub mod hostd_host_profile;
+pub mod hostd_log_entry;
+pub mod hostd_log_list_response;
+pub mod hostd_project_summary;
+pub mod hostd_ws_event;
+pub mod hostd_ws_heartbeat;
 pub mod project_status_report;

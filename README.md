@@ -175,6 +175,30 @@ Reconcile daemon intent with observed state:
 cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db daemon-reconcile --apply
 ```
 
+Retrieve structured logs from a hostd node:
+
+```bash
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db host-logs \
+  --base-url http://127.0.0.1:7444 \
+  --auth-token dev-token \
+  --project-id ao-fleet \
+  --cat daemon \
+  --level error \
+  --limit 50
+```
+
+Tail the live websocket stream from a hostd node:
+
+```bash
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db host-log-stream \
+  --base-url http://127.0.0.1:7444 \
+  --auth-token dev-token \
+  --project-id ao-fleet \
+  --cat daemon \
+  --level error \
+  --tail 20
+```
+
 Start the MCP server:
 
 ```bash

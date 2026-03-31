@@ -4,9 +4,17 @@ mod errors;
 mod models;
 
 pub use client::ao_daemon_client::AoDaemonClient;
+pub use client::ao_hostd_client::AoHostdClient;
+pub use client::ao_hostd_ws_client::AoHostdWsClient;
 pub use client::ao_remote_daemon_client::AoRemoteDaemonClient;
 pub use errors::ao_command_error::AoCommandError;
 pub use models::daemon_command_result::DaemonCommandResult;
 pub use models::daemon_start_options::DaemonStartOptions;
 pub use models::daemon_state::DaemonState;
+pub use models::hostd_host_profile::HostdHostProfile;
+pub use models::hostd_log_entry::HostdLogEntry;
+pub use models::hostd_log_list_response::HostdLogListResponse;
+pub use models::hostd_project_summary::HostdProjectSummary;
+pub use models::hostd_ws_event::HostdWsEvent;
+pub use models::hostd_ws_heartbeat::HostdWsHeartbeat;
 pub use models::project_status_report::ProjectStatusReport;

@@ -14,7 +14,12 @@ use crate::cli::handlers::founder_overview::founder_overview;
 use crate::cli::handlers::host_create::host_create;
 use crate::cli::handlers::host_delete::host_delete;
 use crate::cli::handlers::host_get::host_get;
+use crate::cli::handlers::host_import::host_import;
 use crate::cli::handlers::host_list::host_list;
+use crate::cli::handlers::host_log_stream::host_log_stream;
+use crate::cli::handlers::host_logs::host_logs;
+use crate::cli::handlers::host_sync::host_sync;
+use crate::cli::handlers::host_sync_all::host_sync_all;
 use crate::cli::handlers::host_update::host_update;
 use crate::cli::handlers::knowledge_document_create::knowledge_document_create;
 use crate::cli::handlers::knowledge_document_list::knowledge_document_list;
@@ -63,7 +68,12 @@ pub fn route_command(root: RootCommand) -> Result<()> {
         CommandGroup::FounderOverview(command) => founder_overview(&root.db_path, command),
         CommandGroup::HostCreate(command) => host_create(&root.db_path, command),
         CommandGroup::HostGet(command) => host_get(&root.db_path, command),
+        CommandGroup::HostImport(command) => host_import(&root.db_path, command),
+        CommandGroup::HostLogs(command) => host_logs(&root.db_path, command),
+        CommandGroup::HostLogStream(command) => host_log_stream(&root.db_path, command),
         CommandGroup::HostList(command) => host_list(&root.db_path, command),
+        CommandGroup::HostSync(command) => host_sync(&root.db_path, command),
+        CommandGroup::HostSyncAll(command) => host_sync_all(&root.db_path, command),
         CommandGroup::HostUpdate(command) => host_update(&root.db_path, command),
         CommandGroup::HostDelete(command) => host_delete(&root.db_path, command),
         CommandGroup::TeamCreate(command) => team_create(&root.db_path, command),
