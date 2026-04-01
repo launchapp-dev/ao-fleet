@@ -1,0 +1,153 @@
+tools_allowlist:
+- cargo
+- git
+- gh
+- bash
+mcp_servers:
+  context7:
+    command: npx
+    args:
+    - -y
+    - '@upstash/context7-mcp'
+  rust-docs:
+    command: npx
+    args:
+    - -y
+    - rust-docs-mcp-server
+  github:
+    command: npx
+    args:
+    - -y
+    - 'gh-cli-mcp'
+agents:
+  default:
+    model: claude-sonnet-4-6
+    tool: claude
+    mcp_servers:
+    - ao
+    - context7
+    - rust-docs
+phase_catalog:
+  requirements:
+    label: Requirements
+    description: Validate and refine task requirements before implementation
+    category: planning
+    tags:
+    - requirements
+    - planning
+  implementation:
+    label: Implementation
+    description: Implement production-quality code changes
+    category: development
+    tags:
+    - coding
+    - implementation
+  push-branch:
+    label: Push Branch
+    description: Push the current branch to origin
+    category: operations
+    tags:
+    - git
+  create-pr:
+    label: Create PR
+    description: Create a GitHub PR from the current branch
+    category: operations
+    tags:
+    - git
+    - pr
+  cleanup:
+    label: Cleanup
+    description: Delete cargo build artifacts to free disk space
+    category: operations
+    tags:
+    - cleanup
+phases:
+  requirements:
+    mode: agent
+    agent: default
+    directive: >
+      Validate and refine task requirements. Read the task, search the codebase for
+      relevant files, and ensure the scope is well-defined before implementation.
+    capabilities:
+      mutates_state: true
+  implementation:
+    mode: agent
+    agent: default
+    directive: >
+      Implement production-quality code for this task in the ao-fleet Rust workspace.
+      This is a 7-crate Rust workspace for multi-project fleet orchestration.
+      Keep changes focused, run cargo check and cargo test to verify.
+    output_contract:
+      kind: implementation_result
+      required_fields:
+      - commit_message
+      fields:
+        summary:
+          type: string
+          description: Short summary of the completed implementation work.
+        changed_files:
+          type: array
+          description: Files changed by the implementation phase.
+          items:
+            type: string
+    decision_contract:
+      min_confidence: 0.7
+      max_risk: medium
+      allow_missing_decision: false
+  push-branch:
+    mode: command
+    directive: Push the current branch to origin
+    command:
+      program: git
+      args:
+      - push
+      - -u
+      - origin
+      - HEAD
+      cwd_mode: task_root
+      timeout_secs: 60
+      success_exit_codes:
+      - 0
+  create-pr:
+    mode: command
+    directive: Create a GitHub PR from the current branch to main
+    command:
+      program: gh
+      args:
+      - pr
+      - create
+      - --fill
+      - --base
+      - main
+      cwd_mode: task_root
+      timeout_secs: 60
+      success_exit_codes:
+      - 0
+  cleanup:
+    mode: command
+    directive: Delete cargo build artifacts to free disk space
+    command:
+      cwd_mode: task_root
+      program: cargo
+      args:
+      - clean
+      timeout_secs: 60
+workflows:
+- id: standard
+  name: Standard
+  description: "Implement → Push → PR"
+  phases:
+  - requirements
+  - implementation
+  - push-branch
+  - create-pr
+  - cleanup
+- id: quick-fix
+  name: Quick Fix
+  description: "Implement → Push → PR (no requirements phase)"
+  phases:
+  - implementation
+  - push-branch
+  - create-pr
+  - cleanup
+schedules: []

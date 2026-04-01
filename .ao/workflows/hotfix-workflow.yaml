@@ -1,6 +1,0 @@
-workflows:
-  - id: hotfix-workflow
-    name: Hotfix Workflow
-    description: Fast-track workflow for urgent fixes.
-    phases:
-      - workflow_ref: ao.task/quick-fix
