@@ -1,6 +1,7 @@
 use clap::Args;
 
 #[derive(Debug, Args)]
+#[command(about = "Create or update a daemon schedule override for a team")]
 pub struct DaemonOverrideUpsertCommand {
     #[arg(long)]
     pub team_id: String,

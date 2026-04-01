@@ -1,6 +1,7 @@
 use clap::Args;
 
 #[derive(Debug, Args)]
+#[command(about = "Create a knowledge document in the fleet knowledge base")]
 pub struct KnowledgeDocumentCreateCommand {
     #[arg(long)]
     pub id: Option<String>,

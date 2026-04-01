@@ -6,6 +6,7 @@ use crate::cli::handlers::config_snapshot_import_command::ConfigSnapshotImportCo
 use crate::cli::handlers::daemon_override_clear_command::DaemonOverrideClearCommand;
 use crate::cli::handlers::daemon_override_list_command::DaemonOverrideListCommand;
 use crate::cli::handlers::daemon_override_upsert_command::DaemonOverrideUpsertCommand;
+use crate::cli::handlers::daemon_health_rollup_command::DaemonHealthRollupCommand;
 use crate::cli::handlers::daemon_reconcile_command::DaemonReconcileCommand;
 use crate::cli::handlers::daemon_status_command::DaemonStatusCommand;
 use crate::cli::handlers::db_init_command::DbInitCommand;
@@ -41,6 +42,7 @@ use crate::cli::handlers::project_host_assign_command::ProjectHostAssignCommand;
 use crate::cli::handlers::project_host_clear_command::ProjectHostClearCommand;
 use crate::cli::handlers::project_host_list_command::ProjectHostListCommand;
 use crate::cli::handlers::project_list_command::ProjectListCommand;
+use crate::cli::handlers::project_status_command::ProjectStatusCommand;
 use crate::cli::handlers::project_update_command::ProjectUpdateCommand;
 use crate::cli::handlers::schedule_create_command::ScheduleCreateCommand;
 use crate::cli::handlers::schedule_delete_command::ScheduleDeleteCommand;
@@ -97,6 +99,7 @@ pub enum CommandGroup {
     ProjectHostClear(ProjectHostClearCommand),
     ProjectHostList(ProjectHostListCommand),
     ProjectList(ProjectListCommand),
+    ProjectStatus(ProjectStatusCommand),
     ProjectUpdate(ProjectUpdateCommand),
     ProjectDelete(ProjectDeleteCommand),
     ScheduleCreate(ScheduleCreateCommand),
@@ -115,6 +118,7 @@ pub enum CommandGroup {
     DaemonOverrideList(DaemonOverrideListCommand),
     DaemonOverrideClear(DaemonOverrideClearCommand),
     DaemonStatus(DaemonStatusCommand),
+    DaemonHealthRollup(DaemonHealthRollupCommand),
     DaemonReconcile(DaemonReconcileCommand),
     McpList(McpListCommand),
     McpServe(McpServeCommand),

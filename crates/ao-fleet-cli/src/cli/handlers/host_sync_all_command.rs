@@ -1,6 +1,7 @@
 use clap::Args;
 
 #[derive(Debug, Args)]
+#[command(about = "Sync project registrations from all known hosts")]
 pub struct HostSyncAllCommand {
     #[arg(long)]
     pub auth_token: Option<String>,

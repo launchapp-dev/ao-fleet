@@ -1,6 +1,7 @@
 use clap::Args;
 
 #[derive(Debug, Args)]
+#[command(about = "Sync project registrations from a specific remote host")]
 pub struct HostSyncCommand {
     #[arg(long)]
     pub base_url: String,

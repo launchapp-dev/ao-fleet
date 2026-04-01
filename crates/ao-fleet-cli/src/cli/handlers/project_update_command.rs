@@ -1,6 +1,7 @@
 use clap::Args;
 
 #[derive(Debug, Args)]
+#[command(about = "Update fields on a registered project")]
 pub struct ProjectUpdateCommand {
     #[arg(long)]
     pub id: String,

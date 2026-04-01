@@ -1,6 +1,7 @@
 use clap::Args;
 
 #[derive(Debug, Args)]
+#[command(about = "Create a new team in the fleet")]
 pub struct TeamCreateCommand {
     #[arg(long)]
     pub slug: String,

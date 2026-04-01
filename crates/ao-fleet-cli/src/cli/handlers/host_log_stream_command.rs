@@ -1,6 +1,7 @@
 use clap::Args;
 
 #[derive(Debug, Args)]
+#[command(about = "Stream logs from a remote host in real time")]
 pub struct HostLogStreamCommand {
     #[arg(long)]
     pub base_url: String,

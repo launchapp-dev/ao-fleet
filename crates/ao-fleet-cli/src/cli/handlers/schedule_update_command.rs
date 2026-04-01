@@ -1,6 +1,7 @@
 use clap::Args;
 
 #[derive(Debug, Args)]
+#[command(about = "Update fields on an existing daemon schedule")]
 pub struct ScheduleUpdateCommand {
     #[arg(long)]
     pub id: String,

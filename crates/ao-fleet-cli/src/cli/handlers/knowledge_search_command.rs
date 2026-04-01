@@ -1,6 +1,7 @@
 use clap::Args;
 
 #[derive(Debug, Args)]
+#[command(about = "Search the fleet knowledge base for documents and facts")]
 pub struct KnowledgeSearchCommand {
     #[arg(long)]
     pub scope: Option<String>,
