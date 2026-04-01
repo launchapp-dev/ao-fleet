@@ -1,6 +1,7 @@
 use clap::Args;
 
 #[derive(Debug, Args)]
+#[command(about = "Discover AO projects under one or more directory trees")]
 pub struct ProjectDiscoverCommand {
     #[arg(long = "search-root")]
     pub search_roots: Vec<String>,

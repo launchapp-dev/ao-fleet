@@ -1,6 +1,7 @@
 use clap::Args;
 
 #[derive(Debug, Args)]
+#[command(about = "Create or update a knowledge source")]
 pub struct KnowledgeSourceUpsertCommand {
     #[arg(long)]
     pub id: Option<String>,

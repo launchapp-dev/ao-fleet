@@ -1,6 +1,7 @@
 use clap::Args;
 
 #[derive(Debug, Args)]
+#[command(about = "Create a daemon activity schedule for a team")]
 pub struct ScheduleCreateCommand {
     #[arg(long)]
     pub team_id: String,

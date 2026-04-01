@@ -1,6 +1,7 @@
 use clap::Args;
 
 #[derive(Debug, Args)]
+#[command(about = "Register a new execution host in the fleet")]
 pub struct HostCreateCommand {
     #[arg(long)]
     pub slug: String,

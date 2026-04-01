@@ -1,6 +1,7 @@
 use clap::Args;
 
 #[derive(Debug, Args)]
+#[command(about = "List knowledge sources, optionally filtered by scope")]
 pub struct KnowledgeSourceListCommand {
     #[arg(long)]
     pub scope: Option<String>,

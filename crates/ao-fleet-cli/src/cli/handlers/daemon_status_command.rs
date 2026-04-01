@@ -1,6 +1,7 @@
 use clap::Args;
 
 #[derive(Debug, Args)]
+#[command(about = "Show current daemon desired and observed status for all projects")]
 pub struct DaemonStatusCommand {
     #[arg(long)]
     pub team_id: Option<String>,

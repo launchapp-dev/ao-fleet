@@ -21,7 +21,7 @@ pub fn daemon_status(db_path: &str, command: DaemonStatusCommand) -> Result<()> 
     print_json(&store.fleet_daemon_statuses(command.team_id.as_deref())?)
 }
 
-fn refresh_observed_statuses(store: &FleetStore, team_id: Option<&str>) -> Result<()> {
+pub fn refresh_observed_statuses(store: &FleetStore, team_id: Option<&str>) -> Result<()> {
     let placement_map = build_project_host_placement_map(store.list_project_host_placements()?);
     let host_map = build_host_map(store.list_hosts()?);
 

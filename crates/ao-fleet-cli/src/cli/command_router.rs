@@ -3,6 +3,7 @@ use anyhow::Result;
 use crate::cli::handlers::audit_list::audit_list;
 use crate::cli::handlers::config_snapshot_export::config_snapshot_export;
 use crate::cli::handlers::config_snapshot_import::config_snapshot_import;
+use crate::cli::handlers::daemon_health_rollup::daemon_health_rollup;
 use crate::cli::handlers::daemon_override_clear::daemon_override_clear;
 use crate::cli::handlers::daemon_override_list::daemon_override_list;
 use crate::cli::handlers::daemon_override_upsert::daemon_override_upsert;
@@ -41,6 +42,7 @@ use crate::cli::handlers::project_host_assign::project_host_assign;
 use crate::cli::handlers::project_host_clear::project_host_clear;
 use crate::cli::handlers::project_host_list::project_host_list;
 use crate::cli::handlers::project_list::project_list;
+use crate::cli::handlers::project_status::project_status;
 use crate::cli::handlers::project_update::project_update;
 use crate::cli::handlers::schedule_create::schedule_create;
 use crate::cli::handlers::schedule_delete::schedule_delete;
@@ -91,6 +93,7 @@ pub fn route_command(root: RootCommand) -> Result<()> {
         CommandGroup::ProjectHostClear(command) => project_host_clear(&root.db_path, command),
         CommandGroup::ProjectHostList(command) => project_host_list(&root.db_path, command),
         CommandGroup::ProjectList(command) => project_list(&root.db_path, command),
+        CommandGroup::ProjectStatus(command) => project_status(&root.db_path, command),
         CommandGroup::ProjectUpdate(command) => project_update(&root.db_path, command),
         CommandGroup::ProjectDelete(command) => project_delete(&root.db_path, command),
         CommandGroup::ScheduleCreate(command) => schedule_create(&root.db_path, command),
@@ -117,6 +120,7 @@ pub fn route_command(root: RootCommand) -> Result<()> {
         CommandGroup::DaemonOverrideList(command) => daemon_override_list(&root.db_path, command),
         CommandGroup::DaemonOverrideClear(command) => daemon_override_clear(&root.db_path, command),
         CommandGroup::DaemonStatus(command) => daemon_status(&root.db_path, command),
+        CommandGroup::DaemonHealthRollup(command) => daemon_health_rollup(&root.db_path, command),
         CommandGroup::DaemonReconcile(command) => daemon_reconcile(&root.db_path, command),
         CommandGroup::McpList(command) => mcp_list(command),
         CommandGroup::McpServe(command) => mcp_serve(&root.db_path, command),

@@ -1,6 +1,7 @@
 use clap::Args;
 
 #[derive(Debug, Args)]
+#[command(about = "Preview or apply daemon reconciliation actions across the fleet")]
 pub struct DaemonReconcileCommand {
     #[arg(long)]
     pub at: Option<String>,

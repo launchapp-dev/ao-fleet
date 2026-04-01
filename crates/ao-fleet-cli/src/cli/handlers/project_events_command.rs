@@ -1,6 +1,7 @@
 use clap::Args;
 
 #[derive(Debug, Clone, Args)]
+#[command(about = "Stream or tail workflow events for a project")]
 pub struct ProjectEventsCommand {
     #[arg(long)]
     pub project_root: String,

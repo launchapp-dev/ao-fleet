@@ -1,6 +1,7 @@
 use clap::Args;
 
 #[derive(Debug, Args)]
+#[command(about = "Fetch recent logs from a remote host")]
 pub struct HostLogsCommand {
     #[arg(long)]
     pub base_url: String,

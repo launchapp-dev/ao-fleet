@@ -1,6 +1,7 @@
 use clap::Args;
 
 #[derive(Debug, Clone, Args)]
+#[command(about = "Run an ao-cli JSON command against a registered project")]
 pub struct ProjectAoJsonCommand {
     #[arg(long)]
     pub project_root: String,
