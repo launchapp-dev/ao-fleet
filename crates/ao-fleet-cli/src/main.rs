@@ -6,4 +6,3 @@ use clap::Parser;
 fn main() -> Result<()> {
     run(RootCommand::parse())
 }
-

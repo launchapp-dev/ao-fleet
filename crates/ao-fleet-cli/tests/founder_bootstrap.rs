@@ -138,11 +138,8 @@ fn test_daemon_health_rollup_with_projects() {
         .expect("daemon_health_rollup with projects succeeded");
 
     // Also verify rollup filtered by team works
-    daemon_health_rollup(
-        path,
-        DaemonHealthRollupCommand { team_id: Some(team.id.clone()) },
-    )
-    .expect("daemon_health_rollup with team filter succeeded");
+    daemon_health_rollup(path, DaemonHealthRollupCommand { team_id: Some(team.id.clone()) })
+        .expect("daemon_health_rollup with team filter succeeded");
 }
 
 /// project-status returns an error for a nonexistent project.
@@ -191,9 +188,6 @@ fn test_project_status_found() {
         })
         .expect("project created");
 
-    project_status(
-        path,
-        ProjectStatusCommand { id: project.id.clone(), refresh: false },
-    )
-    .expect("project_status for known project succeeded");
+    project_status(path, ProjectStatusCommand { id: project.id.clone(), refresh: false })
+        .expect("project_status for known project succeeded");
 }

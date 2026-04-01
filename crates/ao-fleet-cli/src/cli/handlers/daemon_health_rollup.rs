@@ -21,14 +21,10 @@ pub fn daemon_health_rollup(db_path: &str, command: DaemonHealthRollupCommand) -
     let statuses = store.fleet_daemon_statuses(command.team_id.as_deref())?;
 
     let total = statuses.len();
-    let desired_running = statuses
-        .iter()
-        .filter(|s| s.desired_state == DaemonDesiredState::Running)
-        .count();
-    let observed_running = statuses
-        .iter()
-        .filter(|s| s.observed_state == Some(DaemonDesiredState::Running))
-        .count();
+    let desired_running =
+        statuses.iter().filter(|s| s.desired_state == DaemonDesiredState::Running).count();
+    let observed_running =
+        statuses.iter().filter(|s| s.observed_state == Some(DaemonDesiredState::Running)).count();
     let aligned = statuses
         .iter()
         .filter(|s| s.observed_state.as_ref().map_or(false, |obs| obs == &s.desired_state))
