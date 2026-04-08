@@ -1,6 +1,6 @@
 # AO Fleet
 
-`ao-fleet` is the company layer above AO teams.
+`ao-fleet` is the company layer above AO teams. It ships as a CLI and MCP server and incorporates the fleet-agent workflow patterns from `ao-fleet-pack`.
 
 It is the control plane for:
 
@@ -42,14 +42,50 @@ What is still missing is a true fleet-level control plane:
 
 ## Current Surface
 
-The repository currently exposes:
+The repository exposes 54 CLI commands and a full MCP server. The surface covers:
 
-- CLI commands for team, project, schedule, audit, daemon, and knowledge operations
-- CLI commands for host registration and project placement intent
-- a stdio MCP server for `fleet.*` tools
-- SQLite-backed fleet state
-- a company knowledge base with sources, documents, facts, and search
-- persisted daemon status and config snapshot import/export for founder bootstrap
+- **Database**: `db-init`
+- **Audit**: `audit-list` — searchable append-only log of all fleet mutations
+- **Config snapshots**: `config-snapshot-export`, `config-snapshot-import`
+- **Fleet overview**: `fleet-overview`, `founder-overview`
+- **Hosts**: `host-create`, `host-get`, `host-import`, `host-logs`, `host-log-stream`, `host-list`, `host-sync`, `host-sync-all`, `host-update`, `host-delete`
+- **Teams**: `team-create`, `team-get`, `team-list`, `team-update`, `team-delete`
+- **Projects**: `project-create`, `project-ao-json`, `project-config-get`, `project-discover`, `project-events`, `project-get`, `project-host-assign`, `project-host-clear`, `project-host-list`, `project-list`, `project-status`, `project-update`, `project-delete`
+- **Schedules**: `schedule-create`, `schedule-get`, `schedule-list`, `schedule-update`, `schedule-delete`
+- **Knowledge**: `knowledge-source-upsert`, `knowledge-source-list`, `knowledge-document-create`, `knowledge-document-list`, `knowledge-fact-create`, `knowledge-fact-list`, `knowledge-search`
+- **Daemon**: `daemon-override-upsert`, `daemon-override-list`, `daemon-override-clear`, `daemon-status`, `daemon-health-rollup`, `daemon-reconcile`
+- **MCP**: `mcp-list`, `mcp-serve`
+
+SQLite-backed fleet state. Stdio MCP transport. Persisted daemon status and config snapshot import/export for founder bootstrap.
+
+## Fleet Audit
+
+Every create, update, and delete operation writes an audit entry. Use `audit-list` to replay the history of any change:
+
+```bash
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db audit-list
+```
+
+The audit log is the primary source of truth for "who changed what and when" across the fleet. It is append-only and scoped to fleet mutations — not workflow execution history, which lives inside each AO daemon.
+
+## Knowledge Capture
+
+The fleet knowledge base stores company memory as three layered types:
+
+- **Sources** — pointers to external artifacts (runbooks, documents, URLs, manual notes)
+- **Documents** — rich records with title, summary, body, kind, and tags
+- **Facts** — lightweight assertions attached to a team or company scope
+
+All three types support full-text search across scope, kind, and tag filters:
+
+```bash
+cargo run -q -p ao-fleet-cli -- --db-path /tmp/ao-fleet.db knowledge-search \
+  --scope company \
+  --text "launch checklist" \
+  --tag operations
+```
+
+Knowledge is the long-term memory that survives daemon restarts, repo migrations, and team changes. Sources link out; documents and facts are stored directly in the fleet database.
 
 ## Quick Start
 
@@ -237,6 +273,7 @@ This repo is intended to become a standalone open-source service and CLI that:
 - stores company knowledge and makes it searchable
 - exposes a fleet-native MCP server
 - runs its own AO instance for smart workflow automation across repos
+- ships fleet-agent workflow patterns (conductor-style reconciliation and fleet-wide review, migrated from `ao-fleet-pack`)
 
 The design target is "Brain as a product" rather than "a few shell scripts".
 
@@ -254,7 +291,6 @@ The design target is "Brain as a product" rather than "a few shell scripts".
 - `ao`: execution kernel and per-project daemon
 - `ao-dashboard`: visual client that should eventually consume `ao-fleet`
 - `ao-fleet-tools`: early scripts and MCP experiments to fold into this repo
-- `ao-fleet-pack`: workflow ideas and fleet agent patterns to migrate here
 - `brain`: private operator workspace that proved the operating model
 
 ## Suggested Technical Shape
@@ -271,4 +307,4 @@ Rust is the right default because AO is already Rust and the operational parts h
 
 ## Status
 
-The repo has a working core surface for registry, scheduling, daemon reconciliation, MCP, knowledge operations, daemon status, and config snapshots. The next operator-facing layers live in `docs/operator-guide.md` and `docs/architecture.md`.
+The repo has a working core surface: 54 CLI commands covering registry, scheduling, daemon reconciliation, MCP, knowledge operations, fleet audit, daemon health rollup, and config snapshots. Fleet-agent workflow patterns from `ao-fleet-pack` are incorporated. The next operator-facing layers live in `docs/operator-guide.md` and `docs/architecture.md`.
